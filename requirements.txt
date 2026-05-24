@@ -3,3 +3,4 @@ PyNaCl
 python-dotenv
 davey        # discord.py-self imports this at startup; replaced at runtime by davey_compat.py
 dave.py      # DisnakeDev's official libdave Python bindings (the working DAVE implementation)
+yt-dlp

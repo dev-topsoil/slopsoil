@@ -38,6 +38,7 @@ class TVheadendClient:
         self.password = password
         creds = base64.b64encode(f"{user}:{password}".encode()).decode()
         self._auth = f"Basic {creds}"
+        self._now_playing_cache: tuple[float, dict[str, str]] = (0.0, {})
 
     async def get_channels(self) -> list[dict]:
         def _fetch():
@@ -92,7 +93,14 @@ class TVheadendClient:
         moment.  For typical personal setups (≤600 channels with a 1-day past-EPG
         window) this single request is sufficient.  If the EPG is unavailable or
         returns no matches the dict is simply empty — callers degrade gracefully.
+
+        Results are cached for 60 seconds so repeated !channels calls don't hammer
+        the EPG endpoint.
         """
+        cached_ts, cached_data = self._now_playing_cache
+        if time.time() - cached_ts < 60:
+            log.debug("now-playing: returning cached data (%d entries)", len(cached_data))
+            return cached_data
 
         def _fetch() -> dict[str, str]:
             now = time.time()
@@ -116,7 +124,9 @@ class TVheadendClient:
             )
             return result
 
-        return await asyncio.to_thread(_fetch)
+        result = await asyncio.to_thread(_fetch)
+        self._now_playing_cache = (time.time(), result)
+        return result
 
     def stream_url(self, uuid: str) -> str:
         parsed = urlparse(self.base_url)

@@ -28,6 +28,13 @@ class General(commands.Cog):
             "  `!stop` — stop the current stream",
         ]
 
+        if self.bot.get_cog("YtDlp"):
+            lines += [
+                "",
+                "**Video**",
+                "  `!yt <url>` — download a video with yt-dlp and stream it to voice",
+            ]
+
         if self.bot.get_cog("TV"):
             lines += [
                 "",
