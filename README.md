@@ -4,9 +4,9 @@
 
 Features include TVheadend integration, M3U/IPTV playlist management with live EPG (now-playing), YouTube playback via yt-dlp, and hardware-accelerated H.264 encoding via VA-API or NVIDIA NVENC.
 
-> **Keywords:** discord iptv bot, discord youtube stream, stream tv to discord, discord live stream bot, discord voice channel video, iptv discord, self-bot streaming, tvheadend discord, hls discord bot
-
 > **Disclaimer:** slopsoil is a self-bot — it runs on a real Discord user account, not a bot application. Self-bots violate Discord's [Terms of Service](https://discord.com/terms). Use it on an account you are willing to lose, and do not use it in a way that disrupts other users or servers. The authors take no responsibility for account terminations or other consequences.
+
+> **Keywords:** discord iptv bot, discord youtube stream, stream tv to discord, discord live stream bot, discord voice channel video, iptv discord, self-bot streaming, tvheadend discord, hls discord bot
 
 ---
 
