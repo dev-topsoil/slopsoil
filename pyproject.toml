@@ -14,3 +14,21 @@ select = ["E", "W", "F", "I", "B", "C4", "UP"]
 python_version = "3.12"
 ignore_missing_imports = true
 warn_return_any = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["-ra", "-q", "--strict-markers", "--strict-config"]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["venv/*", "tests/*", "tools/*"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
