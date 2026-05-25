@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from cogs.stream import cancel_stream
 from cogs.utils import resolve_voice
+from permissions import Role, require_role
 
 if TYPE_CHECKING:
     from bot import SlopSoil
@@ -18,6 +19,7 @@ class Voice(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = cast("SlopSoil", bot)
 
+    @require_role(Role.FRIEND)
     @commands.command()
     async def join(self, ctx: commands.Context):
         guild, voice_channel, vc = await resolve_voice(ctx)
@@ -42,6 +44,7 @@ class Voice(commands.Cog):
 
         await ctx.send("joined!")
 
+    @require_role(Role.FRIEND)
     @commands.command()
     async def leave(self, ctx: commands.Context):
         guild = ctx.guild
@@ -66,6 +69,7 @@ class Voice(commands.Cog):
         await vc.disconnect(force=False)
         await ctx.send("left!")
 
+    @require_role(Role.FRIEND)
     @commands.command()
     async def stop(self, ctx: commands.Context):
         guild, _, vc = await resolve_voice(ctx)

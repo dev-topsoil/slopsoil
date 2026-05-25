@@ -24,6 +24,7 @@ from cogs.iptv import fetch_xmltv_now_playing as _fetch_xmltv_now_playing
 from cogs.iptv import probe_stream as _probe_stream
 from cogs.stream import start_live_stream
 from cogs.utils import resolve_voice
+from permissions import Role, require_role
 
 # {source_name: (fetched_at, {tvg_id: title})} — refreshed every 15 minutes
 _epg_cache: dict[str, tuple[float, dict[str, str]]] = {}
@@ -329,6 +330,7 @@ class TV(commands.Cog):
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
+    @require_role(Role.VIEWER)
     @commands.command()
     async def channels(self, ctx: commands.Context):
         """List all enabled channels (TVheadend + IPTV) with what's currently airing."""
@@ -472,6 +474,7 @@ class TV(commands.Cog):
 
             await ctx.send(page)
 
+    @require_role(Role.FRIEND)
     @commands.command()
     async def play(self, ctx: commands.Context, *, query: str):
         """
@@ -590,6 +593,7 @@ class TV(commands.Cog):
             " — use `!channels` to see what's available"
         )
 
+    @require_role(Role.FRIEND)
     @commands.command()
     async def search(self, ctx: commands.Context, *, query: str):
         """
