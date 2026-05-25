@@ -6,7 +6,7 @@ Stream live TV into Discord voice channels from a [TVheadend](https://tvheadend.
 - **TVheadend integration** — browse live channels with now-playing EPG info and stream by name or channel number
 - **IPTV support** — add any M3U playlist source; XMLTV EPG is picked up automatically
 - **TV guide search** — find a show by title and start watching immediately or schedule it to start when it airs
-- **yt-dlp** — download and stream any YouTube/web video directly with `!yt <url>`
+- **yt-dlp** — download and stream any YouTube/web video directly with `!play <url>`
 - **H.264 video + Opus audio** — full video streaming into Discord voice, not just audio
 - **Docker support** — single `docker compose up` deployment with persistent IPTV source storage
 
@@ -27,7 +27,6 @@ Built in Python using [discord.py-self](https://github.com/dolfies/discord.py-se
 - [Running](#running)
 - [Docker Compose](#docker-compose)
 - [Commands](#commands)
-  - [yt-dlp video streaming](#yt-dlp-video-streaming)
   - [TVheadend streaming](#tvheadend-streaming)
   - [TV guide search](#tv-guide-search)
   - [IPTV](#iptv)
@@ -152,24 +151,13 @@ The bot detects available encoders at startup and falls back to `libopenh264` (s
 | `!join` | Join your current voice channel |
 | `!leave` | Disconnect from voice |
 | `!stop` | Stop the current stream |
-| `!yt <url>` | Download a video with yt-dlp and stream it to voice |
 | `!channels` | List all channels (TVheadend + IPTV) with now-playing info (paginated) |
-| `!play <name or #>` | Stream a TVheadend or IPTV channel into voice |
+| `!play <name, #, or url>` | Stream a TVheadend/IPTV channel or a yt-dlp URL into voice |
 | `!search <title>` | Find a show in the TV guide; plays now or schedules |
 | `!add-source <name> <url>` | Add an IPTV M3U playlist source |
 | `!sources` | List all sources and their enabled/disabled state |
 | `!sources enable/disable <name>` | Enable or disable a source by name |
 | `!delete-source` | Remove an IPTV source |
-
-### yt-dlp video streaming
-
-```
-!yt https://www.youtube.com/watch?v=dQw4w9WgXcQ
-```
-
-`!yt` downloads the video using [yt-dlp](https://github.com/yt-dlp/yt-dlp) (which supports YouTube, Twitch VODs, and hundreds of other sites), then streams it into your voice channel as a go-live screen share. The downloaded file is stored in a temporary directory and deleted automatically once playback ends or is stopped with `!stop`.
-
-Playlist URLs are intentionally blocked — only a single video is downloaded per command. Use `!stop` to end playback early.
 
 ### TVheadend streaming
 
@@ -181,6 +169,16 @@ Playlist URLs are intentionally blocked — only a single video is downloaded pe
 ```
 
 `!play` will join your current voice channel automatically if the bot isn't already there. It searches TVheadend channels first, then IPTV channels from enabled sources.
+
+### yt-dlp video streaming
+
+```
+!play https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
+
+If `!play` receives a URL (starting with `http://` or `https://`), it downloads the video using [yt-dlp](https://github.com/yt-dlp/yt-dlp) (which supports YouTube, Twitch VODs, and hundreds of other sites), then streams it into your voice channel as a go-live screen share. The downloaded file is stored in a temporary directory and deleted automatically once playback ends or is stopped with `!stop`.
+
+Playlist URLs are intentionally blocked — only a single video is downloaded per command. Use `!stop` to end playback early.
 
 ### TV guide search
 

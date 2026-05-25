@@ -80,7 +80,7 @@ class SlopSoil(commands.Bot):
 
         self.add_check(is_allowed)
 
-        for ext in ("cogs.general", "cogs.voice", "cogs.iptv", "cogs.ytdlp"):
+        for ext in ("cogs.general", "cogs.voice", "cogs.iptv"):
             await self.load_extension(ext)
             log.info("loaded extension: %s", ext)
 

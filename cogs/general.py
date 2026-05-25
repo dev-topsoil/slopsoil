@@ -28,21 +28,14 @@ class General(commands.Cog):
             "  `!stop` — stop the current stream",
         ]
 
-        if self.bot.get_cog("YtDlp"):
-            lines += [
-                "",
-                "**Video**",
-                "  `!yt <url>` — download a video with yt-dlp and stream it to voice",
-            ]
-
         if self.bot.get_cog("TV"):
             lines += [
                 "",
                 "**TV (TVheadend)**",
                 "  `!channels` — list all channels (TVheadend + IPTV)"
                 " with now-playing info (paginated)",
-                "  `!play <number or name>` — stream a TVheadend or IPTV"
-                " channel into voice",
+                "  `!play <number, name, or url>` — stream a TVheadend/IPTV"
+                " channel or a yt-dlp URL into voice",
                 "  `!search <show title>` — find a show in the EPG;"
                 " plays now or schedules",
             ]

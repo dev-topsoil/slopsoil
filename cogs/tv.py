@@ -5,11 +5,14 @@ import base64
 import json
 import logging
 import os
+import shutil
+import tempfile
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlparse, urlunparse
 
@@ -24,6 +27,54 @@ from cogs.utils import resolve_voice
 
 # {source_name: (fetched_at, {tvg_id: title})} — refreshed every 15 minutes
 _epg_cache: dict[str, tuple[float, dict[str, str]]] = {}
+
+
+async def _yt_download(url: str, out_dir: str) -> tuple[str, str]:
+    """Download url into out_dir via yt-dlp. Returns (file_path, title)."""
+    import yt_dlp
+
+    def _run() -> tuple[str, str]:
+        opts = {
+            "format": "bestvideo+bestaudio/best",
+            "outtmpl": os.path.join(out_dir, "%(id)s.%(ext)s"),
+            "merge_output_format": "mp4",
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+
+        title: str = (info or {}).get("title", "video")
+        downloads = (info or {}).get("requested_downloads", [])
+        if downloads:
+            candidate = downloads[0].get("filepath", "")
+            if candidate and os.path.isfile(candidate):
+                return candidate, title
+
+        files = [f for f in Path(out_dir).iterdir() if f.is_file()]
+        if not files:
+            raise FileNotFoundError("yt-dlp produced no output file")
+        return str(max(files, key=lambda f: f.stat().st_size)), title
+
+    return await asyncio.to_thread(_run)
+
+
+def _yt_remove_dir(path: str) -> None:
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+        log.info("removed yt-dlp temp dir: %s", path)
+    except Exception as exc:
+        log.warning("failed to remove %s: %s", path, exc)
+
+
+async def _yt_cleanup_after_stream(task: asyncio.Task, tmp_dir: str) -> None:
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):
+        pass
+    finally:
+        _yt_remove_dir(tmp_dir)
 
 if TYPE_CHECKING:
     from bot import SlopSoil
@@ -424,8 +475,9 @@ class TV(commands.Cog):
     @commands.command()
     async def play(self, ctx: commands.Context, *, query: str):
         """
-        Stream a TVheadend channel (audio + video) into your voice channel.
-        Match by channel number (!play 1) or name (!play BBC One).
+        Stream a channel or URL into your voice channel.
+        Pass a URL to download and stream via yt-dlp (!play https://...).
+        Match a TVheadend/IPTV channel by number or name (!play BBC One).
         """
         guild, voice_channel, vc = await resolve_voice(ctx)
 
@@ -439,6 +491,46 @@ class TV(commands.Cog):
             return
 
         assert guild is not None
+
+        if query.startswith(("http://", "https://")):
+            log.info(
+                "play: URL detected, using yt-dlp (requested by %s in guild '%s')",
+                ctx.author,
+                guild,
+            )
+            status = await ctx.send("downloading…")
+            tmp_dir = tempfile.mkdtemp(prefix="slopsoil_yt_")
+            try:
+                try:
+                    file_path, title = await _yt_download(query, tmp_dir)
+                except Exception as exc:
+                    log.exception("yt-dlp download failed for %r: %s", query, exc)
+                    await status.edit(content=f"download failed: {exc}")
+                    _yt_remove_dir(tmp_dir)
+                    return
+
+                log.info("yt-dlp downloaded '%s' → %s", title, file_path)
+                await status.edit(content=f"starting **{title}**…")
+
+                await start_live_stream(
+                    self.bot, ctx.send, guild, voice_channel, vc,
+                    title=title, url=file_path, live=False, audio=True,
+                    probe_size=2_000_000,
+                )
+
+                stream_task = self.bot.stream_tasks.get(guild.id)
+                if stream_task:
+                    asyncio.create_task(
+                        _yt_cleanup_after_stream(stream_task, tmp_dir),
+                        name=f"yt-cleanup-{guild.id}",
+                    )
+                else:
+                    _yt_remove_dir(tmp_dir)
+            except Exception:
+                _yt_remove_dir(tmp_dir)
+                raise
+            return
+
         log.info(
             "looking up channel for query %r (requested by %s in guild '%s')",
             query,
