@@ -22,6 +22,7 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 - [Rebuilding the Docker Container](#rebuilding-the-docker-container)
 - [Hardware Acceleration](#hardware-acceleration)
 - [How It Works](#how-it-works)
+- [Running Tests](#running-tests)
 
 ---
 
@@ -315,6 +316,48 @@ deploy:
 ### Why libx264 isn't used in Docker
 
 The Docker image is based on Fedora and uses `ffmpeg-free`. This package does not include `libx264` (which requires a separate RPM Fusion repository and a different FFmpeg build). More importantly, `libx264`-encoded streams cause Discord to silently drop the stream after the very first frame. `libopenh264` and the hardware encoders do not have this problem. See [STREAMING.md](STREAMING.md) for the technical details.
+
+---
+
+## Running Tests
+
+The test suite covers the permissions system, video compat patches, voice utilities, and the DAVE shim logic.
+
+### Install test dependencies
+
+```bash
+source venv/bin/activate
+pip install pytest pytest-asyncio pytest-mock
+```
+
+Or without activating the venv:
+
+```bash
+venv/bin/pip install pytest pytest-asyncio pytest-mock
+```
+
+### Run all tests
+
+```bash
+venv/bin/pytest
+```
+
+### Useful flags
+
+```bash
+# Verbose output with print statements
+venv/bin/pytest -v -s
+
+# Stop on first failure
+venv/bin/pytest -x
+
+# Run a specific file
+venv/bin/pytest tests/test_permissions.py
+
+# With coverage report
+venv/bin/pip install pytest-cov
+venv/bin/pytest --cov --cov-report=term-missing
+```
 
 ---
 
