@@ -1,238 +1,323 @@
-# slopsoil — Discord live TV streaming bot
+# slopsoil — Stream YouTube & IPTV to Discord Voice Channels
 
-Stream live TV into Discord voice channels from a [TVheadend](https://tvheadend.org) backend or any IPTV M3U playlist. slopsoil transcodes the stream to H.264 and broadcasts it as a go-live screen share so everyone in the voice channel can watch together.
+**slopsoil** is a Discord self-bot that streams live TV, IPTV playlists, YouTube videos, and any HTTP/HLS/RTSP stream directly into a Discord voice channel — as a screenshare that all server members can watch together.
 
-**Key features:**
-- **TVheadend integration** — browse live channels with now-playing EPG info and stream by name or channel number
-- **IPTV support** — add any M3U playlist source; XMLTV EPG is picked up automatically
-- **TV guide search** — find a show by title and start watching immediately or schedule it to start when it airs
-- **yt-dlp** — download and stream any YouTube/web video directly with `!play <url>`
-- **H.264 video + Opus audio** — full video streaming into Discord voice, not just audio
-- **Docker support** — single `docker compose up` deployment with persistent IPTV source storage
+Features include TVheadend integration, M3U/IPTV playlist management with live EPG (now-playing), YouTube playback via yt-dlp, and hardware-accelerated H.264 encoding via VA-API or NVIDIA NVENC.
 
-Built in Python using [discord.py-self](https://github.com/dolfies/discord.py-self).
+> **Keywords:** discord iptv bot, discord youtube stream, stream tv to discord, discord live stream bot, discord voice channel video, iptv discord, self-bot streaming, tvheadend discord, hls discord bot
 
-> **Warning:** Self-bots violate Discord's [Terms of Service](https://discord.com/terms). Use at your own risk — your account may be suspended or banned.
+---
 
-![slopsoil streaming a live TV channel via Discord go-live screen share in a voice channel](images/slopsoil3.png)
+## Table of Contents
 
-![slopsoil bot commands in Discord showing channel list with EPG now-playing info](images/slopsoil4.png)
-
-## Table of contents
-
+- [Screenshots](#screenshots)
+- [Features](#features)
 - [Requirements](#requirements)
-- [Installation](#installation)
-- [Getting your token](#getting-your-token)
+- [Installation — Bare Metal](#installation--bare-metal)
+- [Installation — Docker Compose](#installation--docker-compose)
 - [Configuration](#configuration)
-- [Running](#running)
-- [Docker Compose](#docker-compose)
-- [Permissions](#permissions)
 - [Commands](#commands)
-  - [TVheadend streaming](#tvheadend-streaming)
-  - [TV guide search](#tv-guide-search)
-  - [IPTV](#iptv)
-- [Further reading](#further-reading)
+- [Rebuilding the Docker Container](#rebuilding-the-docker-container)
+- [Hardware Acceleration](#hardware-acceleration)
+- [How It Works](#how-it-works)
+
+---
+
+## Screenshots
+
+| Channel List | Stream Running |
+|---|---|
+| ![Channel list showing IPTV and TVheadend channels with now-playing info](images/slopsoil3.png) | ![Bot streaming video in a Discord voice channel](images/slopsoil4.png) |
+
+---
+
+## Features
+
+- **YouTube & media streaming** — play any URL that yt-dlp supports (YouTube, Twitch VODs, etc.) directly into a voice channel
+- **IPTV / M3U playlist support** — add M3U sources by URL; channels are listed with live EPG now-playing info
+- **TVheadend integration** — browse and play live TV channels from a TVheadend server; search the EPG by show title and schedule playback
+- **Go-live / screenshare delivery** — streams appear as a screenshare so all members in the channel can watch
+- **H.264 hardware acceleration** — auto-detects NVIDIA NVENC, VA-API (Intel/AMD), or falls back to software encoding
+- **Discord DAVE E2EE support** — correctly handles Discord's end-to-end encryption protocol for voice channels
+- **Role-based access control** — admin, friend, viewer, and none tiers; friends list and guild membership are used automatically
+
+---
 
 ## Requirements
 
-- Python 3.11+
-- `ffmpeg` with H.264 encoder support installed and on `$PATH`
-- `yt-dlp` (installed automatically via `pip install -r requirements.txt`)
-- A Discord user account token
+### Bare metal
 
-The encoder selection priority is: `libx264` → `h264_nvenc` (NVIDIA) → `h264_vaapi` (VA-API) → `libopenh264`. On Fedora, `ffmpeg-free` (the standard package) does not include `libx264` due to patent restrictions, so the bot falls back to `libopenh264` — this is the tested and working configuration. Do **not** swap to RPM Fusion's `ffmpeg` build; it ships a different FFmpeg version whose `libx264` output causes Discord to drop the video stream after one frame.
+| Requirement | Notes |
+|---|---|
+| Python 3.11+ | |
+| FFmpeg | Fedora: `ffmpeg-free` (not RPM Fusion's `ffmpeg`). See [Hardware Acceleration](#hardware-acceleration). |
+| libdave / dave.py | The official Discord DAVE E2EE C library; `dave.py` wraps it |
+| A Discord account token | **Not** a bot token — slopsoil runs as a self-bot on a real user account |
+
+### Docker
+
+- Docker Engine 24+ and Docker Compose v2
+- Optional: a VA-API GPU (`/dev/dri`) or NVIDIA GPU for hardware encoding
+
+---
+
+## Installation — Bare Metal
+
+### 1. Clone the repository
 
 ```bash
-# Fedora / RHEL
-sudo dnf install ffmpeg-free
-
-# Ubuntu / Debian
-sudo apt install ffmpeg
-
-# macOS
-brew install ffmpeg
+git clone https://github.com/topsoil/slopsoil.git
+cd slopsoil
 ```
 
-## Installation
+### 2. Install FFmpeg
+
+**Fedora / RHEL:**
+```bash
+sudo dnf install ffmpeg-free
+```
+
+**Ubuntu / Debian:**
+```bash
+sudo apt install ffmpeg
+```
+
+> **Important:** Do **not** use RPM Fusion's `ffmpeg` package on Fedora. It ships libx264, whose output causes Discord to drop the stream after one frame. Fedora's built-in `ffmpeg-free` package (libopenh264) is required. See [STREAMING.md](STREAMING.md) for the full explanation.
+
+### 3. Install Python dependencies
 
 ```bash
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Getting your token
+This installs:
+- `discord.py-self` — self-bot library with voice support
+- `PyNaCl` — libsodium bindings for RTP encryption
+- `python-dotenv` — `.env` file loading
+- `davey` — stub package (replaced at runtime by the DAVE compatibility shim)
+- `dave.py` — DisnakeDev's official libdave Python bindings (working DAVE/E2EE)
+- `yt-dlp` — YouTube and media downloader
 
-1. Open Discord in a browser (not the desktop app)
-2. Open DevTools (`F12` or `Ctrl+Shift+I`)
-3. Go to the **Network** tab
-4. Send any message in any channel
-5. Find a request to `discord.com/api` and click it
-6. Under **Request Headers**, copy the value of the `Authorization` header
+### 4. Configure the bot
 
-## Configuration
-
-Copy `.env.example` to `.env` and fill in your values:
+Copy the example environment file and fill in your values:
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable | Required | Description |
-|---|---|---|
-| `DISCORD_TOKEN` | Yes | Your Discord user account token |
-| `ALLOWED_USER_IDS` | No | Comma-separated user IDs granted the **Admin** role |
-| `TVHEADEND_URL` | No | TVheadend base URL e.g. `http://192.168.1.100:9981` |
-| `TVHEADEND_USER` | No | TVheadend username |
-| `TVHEADEND_PASS` | No | TVheadend password |
+See [Configuration](#configuration) for details on each variable.
 
-The `!channels`, `!play`, and `!search` commands are only enabled when all three TVheadend variables are set. The bot logs a warning at startup if they are missing.
-
-IPTV (`!add-source`, `!sources`, `!delete-source`) is always available — it does not require any environment variables.
-
-## Running
+### 5. Run the bot
 
 ```bash
-python bot.py
+python3 bot.py
 ```
 
-## Docker Compose
+---
 
-### First run
+## Installation — Docker Compose
+
+### 1. Clone the repository
 
 ```bash
-cp .env.example .env   # fill in your values
-docker compose up -d
+git clone https://github.com/topsoil/slopsoil.git
+cd slopsoil
 ```
 
-The image is built automatically on first run. Logs are visible with:
+### 2. Configure the bot
 
 ```bash
-docker compose logs -f
+cp .env.example .env
 ```
 
-IPTV source data is stored in a named Docker volume (`slopsoil-data`) mounted at the XDG data directory inside the container, so sources survive container restarts and image rebuilds.
+Edit `.env` with your Discord token and other settings. See [Configuration](#configuration).
 
-### Rebuilding after updates
-
-After pulling new code or editing any source file, rebuild the image before restarting:
+### 3. Build and start
 
 ```bash
 docker compose up -d --build
 ```
 
-If you changed `requirements.txt` or the `Dockerfile` itself and want to guarantee a clean slate (no cached layers), do a full rebuild:
+The container will build automatically on first run. IPTV source data is persisted in a named Docker volume (`slopsoil-data`) so your M3U sources survive container restarts and updates.
+
+### 4. View logs
 
 ```bash
-docker compose build --no-cache
-docker compose up -d
+docker compose logs -f
 ```
 
-### Stopping
+---
+
+## Configuration
+
+All configuration is done via environment variables in `.env`:
+
+```env
+# Required — your Discord account token (not a bot token)
+DISCORD_TOKEN=your_token_here
+
+# Comma-separated Discord user IDs that can control the bot
+ALLOWED_USER_IDS=123456789012345678,987654321098765432
+
+# Optional — TVheadend server (all three must be set to enable TV commands)
+TVHEADEND_URL=http://192.168.1.100:9981
+TVHEADEND_USER=admin
+TVHEADEND_PASS=yourpassword
+```
+
+| Variable | Required | Description |
+|---|---|---|
+| `DISCORD_TOKEN` | Yes | Your Discord account token |
+| `ALLOWED_USER_IDS` | Yes | Comma-separated user IDs with admin access |
+| `TVHEADEND_URL` | No | Base URL of your TVheadend server |
+| `TVHEADEND_USER` | No | TVheadend username |
+| `TVHEADEND_PASS` | No | TVheadend password |
+
+TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, the `!channels`, `!search`, and TVheadend-backed `!play` commands are not loaded.
+
+### Finding your Discord token
+
+1. Open Discord in a browser
+2. Open DevTools (F12) → Network tab
+3. Filter for requests to `discord.com/api`
+4. Look for the `Authorization` header on any request — that value is your token
+
+> **Security:** Keep your token private. Anyone with your token can access your Discord account.
+
+---
+
+## Commands
+
+### Voice
+
+| Command | Role | Description |
+|---|---|---|
+| `!join` | Friend | Join your current voice channel |
+| `!leave` | Friend | Leave the voice channel |
+| `!stop` | Friend | Stop the active stream |
+
+### Streaming
+
+| Command | Role | Description |
+|---|---|---|
+| `!play <channel number>` | Friend | Play a TVheadend channel by number |
+| `!play <channel name>` | Friend | Play a channel by name (case-insensitive substring match; searches TVheadend and IPTV) |
+| `!play <URL>` | Friend | Play any URL — YouTube, direct HLS/HTTP/RTSP streams, etc. |
+| `!channels` | Viewer | List all available channels with live now-playing info (paginated) |
+| `!search <show title>` | Friend | Search EPG for a show — plays immediately if airing now, or schedules for upcoming airtime |
+
+### IPTV Source Management
+
+| Command | Role | Description |
+|---|---|---|
+| `!add-source <name> <url>` | Admin | Add an M3U playlist source |
+| `!sources` | Admin | List all sources with enabled/disabled status |
+| `!sources enable <name>` | Admin | Enable a source |
+| `!sources disable <name>` | Admin | Disable a source |
+| `!delete-source` | Admin | Interactively delete a source |
+
+### General
+
+| Command | Role | Description |
+|---|---|---|
+| `!ping` | Any | Check if the bot is responding |
+| `!help` | Any | List available commands |
+
+### Permission tiers
+
+| Role | Who qualifies |
+|---|---|
+| **Admin** | User IDs listed in `ALLOWED_USER_IDS` |
+| **Friend** | Users on the bot account's friends list |
+| **Viewer** | Members of any guild the bot account is in |
+| **None** | Everyone else |
+
+---
+
+## Rebuilding the Docker Container
+
+When you pull new changes to the project, rebuild the container image:
+
+```bash
+# Pull latest changes
+git pull
+
+# Rebuild the image and restart the container
+docker compose up -d --build
+```
+
+If you only changed `.env` (no code changes), a restart is enough — no rebuild needed:
+
+```bash
+docker compose restart
+```
+
+To completely reset the container and its image (does **not** delete IPTV source data, which lives in the volume):
 
 ```bash
 docker compose down
+docker compose up -d --build
 ```
 
-### Hardware encoding (VA-API)
+To also wipe the IPTV source data volume:
 
-The compose file includes a `devices` block for `/dev/dri`. Comment it out if your host has no GPU or VA-API support:
+```bash
+docker compose down -v
+docker compose up -d --build
+```
+
+---
+
+## Hardware Acceleration
+
+slopsoil auto-detects the best available H.264 encoder in this priority order:
+
+| Encoder | Type | Requires |
+|---|---|---|
+| `h264_nvenc` | NVIDIA GPU | NVIDIA driver + `nvidia-container-toolkit` |
+| `h264_vaapi` | VA-API (Intel/AMD) | `/dev/dri` device |
+| `libopenh264` | Cisco software | Included in `ffmpeg-free` |
+| `libx264` | Software (fallback) | **Not used** in Docker (see below) |
+
+### Enabling VA-API in Docker
+
+Uncomment the `devices` section in `docker-compose.yml`:
 
 ```yaml
 devices:
   - /dev/dri:/dev/dri
 ```
 
-The bot detects available encoders at startup and falls back to `libopenh264` (software) automatically if the device is absent or unusable, so this is optional.
+Then rebuild:
 
-## Permissions
-
-The bot uses three roles, assigned automatically based on who the user is.
-
-| Role | Who gets it | Inherits from |
-|---|---|---|
-| **Admin** | Users listed in `ALLOWED_USER_IDS` | Friend, Viewer |
-| **Friend** | Users on the bot account's Discord friends list | Viewer |
-| **Viewer** | Any member of a guild the bot is in | — |
-
-Roles are hierarchical — each role can use all commands available to less-privileged roles. Anyone not covered by the above (e.g. a random DM) is silently ignored.
-
-Each command declares its minimum required role with a `@require_role` decorator in `permissions.py`. The role logic is implemented using `IntFlag` bitflags: each role's bit pattern is a superset of every lower-privilege role's bits, so the single check `(user_role & required) == required` enforces the full hierarchy.
-
-## Commands
-
-| Command | Min. role | Description |
-|---|---|---|
-| `!ping` | Viewer | Check if the bot is alive |
-| `!help` | Viewer | Show all available commands |
-| `!channels` | Viewer | List all channels (TVheadend + IPTV) with now-playing info (paginated) |
-| `!join` | Friend | Join your current voice channel |
-| `!leave` | Friend | Disconnect from voice |
-| `!stop` | Friend | Stop the current stream |
-| `!play <name, #, or url>` | Friend | Stream a TVheadend/IPTV channel or a yt-dlp URL into voice |
-| `!search <title>` | Friend | Find a show in the TV guide; plays now or schedules |
-| `!add-source <name> <url>` | Admin | Add an IPTV M3U playlist source |
-| `!sources` | Admin | List all sources and their enabled/disabled state |
-| `!sources enable/disable <name>` | Admin | Enable or disable a source by name |
-| `!delete-source` | Admin | Remove an IPTV source |
-
-### TVheadend streaming
-
-```
-!channels           ← lists TVheadend and IPTV channels with what's on now (paginated)
-!play BBC One       ← match by name (case-insensitive substring)
-!play 1             ← match by channel number
-!stop
+```bash
+docker compose up -d --build
 ```
 
-`!play` will join your current voice channel automatically if the bot isn't already there. It searches TVheadend channels first, then IPTV channels from enabled sources.
+### Enabling NVIDIA NVENC in Docker
 
-### yt-dlp video streaming
+Install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html), then add to `docker-compose.yml`:
 
-```
-!play https://www.youtube.com/watch?v=dQw4w9WgXcQ
-```
-
-If `!play` receives a URL (starting with `http://` or `https://`), it downloads the video using [yt-dlp](https://github.com/yt-dlp/yt-dlp) (which supports YouTube, Twitch VODs, and hundreds of other sites), then streams it into your voice channel as a go-live screen share. The downloaded file is stored in a temporary directory and deleted automatically once playback ends or is stopped with `!stop`.
-
-Playlist URLs are intentionally blocked — only a single video is downloaded per command. Use `!stop` to end playback early.
-
-### TV guide search
-
-```
-!search Speed Racer
+```yaml
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: 1
+          capabilities: [gpu]
 ```
 
-`!search` queries the TVheadend EPG (electronic programme guide) by show title.
+### Why libx264 isn't used in Docker
 
-**If the show is currently airing**, the bot switches to that channel immediately — same behaviour as `!play`, but found by programme name rather than channel name.
+The Docker image is based on Fedora and uses `ffmpeg-free`. This package does not include `libx264` (which requires a separate RPM Fusion repository and a different FFmpeg build). More importantly, `libx264`-encoded streams cause Discord to silently drop the stream after the very first frame. `libopenh264` and the hardware encoders do not have this problem. See [STREAMING.md](STREAMING.md) for the technical details.
 
-**If the show is coming up within the next 24 hours**, the bot replies with the channel and airtime and asks whether to schedule a viewing:
+---
 
-```
-Speed Racer is on Cartoon Network (#59.3) at 7:00 PM. Schedule a viewing? (y/n)
-```
+## How It Works
 
-Reply **y** (or **yes**) and the bot will automatically switch to that channel 30 seconds before the show starts, joining whichever voice channel you are in at that time. Any previously scheduled viewing is replaced. Running `!play` also cancels a pending schedule.
+slopsoil sends H.264 video and Opus audio directly over Discord's voice UDP protocol, appearing to other users as a screenshare (go-live stream). It patches `discord.py-self` at runtime to add video capability negotiation and implements the full RTP packetization pipeline including SPS/VUI rewriting, RFC 6184 FU-A fragmentation, and DAVE E2EE encryption.
 
-### IPTV
-
-```
-!add-source <name> <playlist.m3u url>
-!sources
-!sources enable <name>
-!sources disable <name>
-```
-
-`!add-source` fetches the M3U playlist from `<url>`, parses all channels, and saves the source (enabled immediately). If the playlist's `#EXTM3U` header contains a `url-tvg` or `x-tvg-url` attribute pointing to an XMLTV EPG feed, it is stored automatically and used to populate now-playing info in `!channels`.
-
-`!sources` lists all sources with their enabled/disabled state.
-
-`!sources enable <name>` / `!sources disable <name>` enables or disables a source by name (case-insensitive substring match). Use `TVheadend` to toggle the TVheadend source, or any part of an IPTV source name.
-
-Once a source is enabled its channels appear in `!channels` and are searchable by `!play`. IPTV channels are streamed by resolving the HLS master playlist to the highest-bandwidth variant and probing the stream before playback.
-
-Source data is persisted to `$XDG_DATA_HOME/slopsoil/sources.json` (default: `~/.local/share/slopsoil/sources.json`).
-
-## Further reading
-
-- [STREAMING.md](STREAMING.md) — how the FFmpeg pipeline, H.264 SPS rewriting, DAVE E2EE encryption, and A/V sync work
-- [ARCHITECTURE.md](ARCHITECTURE.md) — project structure and how to add new commands
+For a detailed technical explanation of the streaming pipeline, the discord.py-self patches, and the esoteric protocol-level discoveries made while building this, see [STREAMING.md](STREAMING.md).
