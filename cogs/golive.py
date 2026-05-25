@@ -29,10 +29,10 @@ import discord
 import discord.opus as _opus
 import nacl.secret
 import nacl.utils
-
-import davey_compat
 from discord.gateway import DiscordVoiceWebSocket
 from discord.voice_state import SocketReader
+
+import davey_compat
 
 if TYPE_CHECKING:
     from bot import SlopSoil
@@ -64,7 +64,7 @@ class GoLiveConnection:
 
     def __init__(
         self,
-        bot: "SlopSoil",
+        bot: SlopSoil,
         guild_id: int,
         channel_id: int,
         vc: discord.VoiceClient,
@@ -135,20 +135,20 @@ class GoLiveConnection:
     async def reinit_dave_session(self) -> None:
         if self.dave_protocol_version > 0:
             # channel_id for go-live DAVE group is server_id - 1
-            dave_channel_id = self.server_id - 1
+            dave_channel_id = self.server_id - 1  # type: ignore[operator]
             if self.dave_session is not None:
                 self.dave_session.reinit(
                     self.dave_protocol_version, self.user.id, dave_channel_id
                 )
             else:
-                self.dave_session = davey_compat.DaveSession(
+                self.dave_session = davey_compat.DaveSession(  # type: ignore[assignment]
                     self.dave_protocol_version, self.user.id, dave_channel_id
                 )
                 # Give libdave access to channel members so MLS proposals from
                 # users in the voice channel are recognized and not rejected.
-                self.dave_session._voice_state = self
+                self.dave_session._voice_state = self  # type: ignore[attr-defined]
             if self.dave_session is not None:
-                await self.ws.send_binary(
+                await self.ws.send_binary(  # type: ignore[union-attr]
                     DiscordVoiceWebSocket.MLS_KEY_PACKAGE,
                     self.dave_session.get_serialized_key_package(),
                 )
@@ -157,7 +157,7 @@ class GoLiveConnection:
             self.dave_session.set_passthrough_mode(True, 10)
 
     async def _recover_from_invalid_commit(self, transition_id: int) -> None:
-        await self.ws.send_as_json(
+        await self.ws.send_as_json(  # type: ignore[union-attr]
             {
                 "op": DiscordVoiceWebSocket.MLS_INVALID_COMMIT_WELCOME,
                 "d": {"transition_id": transition_id},
@@ -169,7 +169,8 @@ class GoLiveConnection:
         log.debug("GoLive: executing transition ID %d", transition_id)
         if transition_id not in self.dave_pending_transitions:
             log.warning(
-                "GoLive: received execute transition but no pending transition for ID %d",
+                "GoLive: received execute transition but no pending"
+                " transition for ID %d",
                 transition_id,
             )
             return
@@ -177,7 +178,10 @@ class GoLiveConnection:
         old_version = self.dave_protocol_version
         self.dave_protocol_version = self.dave_pending_transitions.pop(transition_id)
 
-        if old_version != self.dave_protocol_version and self.dave_protocol_version == 0:
+        if (
+            old_version != self.dave_protocol_version
+            and self.dave_protocol_version == 0
+        ):
             self.dave_downgraded = True
             log.debug("GoLive: DAVE session downgraded")
         elif transition_id > 0 and self.dave_downgraded:
@@ -259,19 +263,19 @@ class GoLiveConnection:
         # it immediately to perform IP discovery.
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.setblocking(False)
-        self._socket_reader = SocketReader(self, start_paused=False)
+        self._socket_reader = SocketReader(self, start_paused=False)  # type: ignore[arg-type]
         self._socket_reader.start()
 
         # Connect WebSocket to stream server and run the voice handshake.
         # from_connection_state() uses the patched identify() from video_compat
         # which adds video:true and streams descriptors to the IDENTIFY payload.
         self.ws = await DiscordVoiceWebSocket.from_connection_state(
-            self, resume=False
+            self, resume=False  # type: ignore[arg-type]
         )
 
         # Poll until READY completes IP discovery (self.ip is set)
         while not self.ip:
-            await self.ws.poll_event()
+            await self.ws.poll_event()  # type: ignore[union-attr]
         log.info("GoLive: IP discovery complete (%s:%s)", self.ip, self.port)
 
         # Poll until SESSION_DESCRIPTION arrives (ws.secret_key is set)
@@ -303,7 +307,7 @@ class GoLiveConnection:
         """Continuously poll the stream WebSocket to handle heartbeats."""
         try:
             while True:
-                await self.ws.poll_event()
+                await self.ws.poll_event()  # type: ignore[union-attr]
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -320,7 +324,7 @@ class GoLiveConnection:
     def send_packet(self, packet: bytes) -> None:
         """Send a raw RTP packet to the go-live stream server."""
         try:
-            self.socket.sendall(packet)
+            self.socket.sendall(packet)  # type: ignore[union-attr]
         except OSError:
             pass
 
@@ -491,25 +495,26 @@ def _encrypt_audio(
     key = bytes(secret_key)
 
     if mode == "aead_xchacha20_poly1305_rtpsize":
-        box = nacl.secret.Aead(key)
+        box = nacl.secret.Aead(key)  # type: ignore[assignment]
         nonce_buf = bytearray(24)
         struct.pack_into(">I", nonce_buf, 0, nonce)
         ct = box.encrypt(payload, bytes(header), bytes(nonce_buf)).ciphertext
         return bytes(header) + ct + bytes(nonce_buf[:4])
 
     if mode == "xsalsa20_poly1305":
-        box = nacl.secret.SecretBox(key)
+        box = nacl.secret.SecretBox(key)  # type: ignore[assignment]
         nonce_buf = bytearray(24)
         nonce_buf[:12] = header
         return bytes(header) + box.encrypt(payload, bytes(nonce_buf)).ciphertext
 
     if mode == "xsalsa20_poly1305_suffix":
-        box = nacl.secret.SecretBox(key)
+        box = nacl.secret.SecretBox(key)  # type: ignore[assignment]
         nonce_bytes = nacl.utils.random(24)
-        return bytes(header) + box.encrypt(payload, nonce_bytes).ciphertext + nonce_bytes
+        ct = box.encrypt(payload, nonce_bytes).ciphertext
+        return bytes(header) + ct + nonce_bytes
 
     if mode == "xsalsa20_poly1305_lite":
-        box = nacl.secret.SecretBox(key)
+        box = nacl.secret.SecretBox(key)  # type: ignore[assignment]
         nonce_buf = bytearray(24)
         struct.pack_into(">I", nonce_buf, 0, nonce)
         ct = box.encrypt(payload, bytes(nonce_buf)).ciphertext

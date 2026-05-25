@@ -18,7 +18,7 @@ import subprocess
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -88,7 +88,7 @@ async def fetch_and_parse(url: str) -> tuple[list[dict], str | None]:
     def _fetch() -> str:
         req = urllib.request.Request(url, headers={"User-Agent": "slopsoil/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.read().decode("utf-8", errors="replace")
+            return resp.read().decode("utf-8", errors="replace")  # type: ignore[no-any-return]
 
     text = await asyncio.to_thread(_fetch)
     channels = parse_m3u(text)
@@ -112,7 +112,7 @@ def _parse_xmltv_dt(s: str) -> datetime:
         h, m = int(off[1:3]), int(off[3:5])
         tz = timezone(timedelta(hours=sign * h, minutes=sign * m))
     else:
-        tz = timezone.utc
+        tz = UTC
     return dt.replace(tzinfo=tz)
 
 
@@ -134,7 +134,7 @@ async def fetch_xmltv_now_playing(epg_url: str) -> dict[str, str]:
         if raw[:2] == b"\x1f\x8b":
             raw = gzip.decompress(raw)
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         result: dict[str, str] = {}
 
         # iterparse with root.clear() pattern: hold a reference to the root
@@ -187,7 +187,9 @@ async def extract_hls_variant_url(master_url: str) -> str:
     """
     def _fetch() -> str:
         try:
-            req = urllib.request.Request(master_url, headers={"User-Agent": "slopsoil/1.0"})
+            req = urllib.request.Request(
+                master_url, headers={"User-Agent": "slopsoil/1.0"}
+            )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 text = resp.read().decode("utf-8", errors="replace")
         except Exception:
@@ -209,7 +211,8 @@ async def extract_hls_variant_url(master_url: str) -> str:
                 if i + 1 < len(lines):
                     nxt = lines[i + 1].strip()
                     if nxt and not nxt.startswith("#"):
-                        abs_url = nxt if nxt.startswith(("http://", "https://")) else base + nxt
+                        is_abs = nxt.startswith(("http://", "https://"))
+                        abs_url = nxt if is_abs else base + nxt
                         if bw > best_bw:
                             best_bw = bw
                             best = abs_url
@@ -253,7 +256,7 @@ async def probe_stream(url: str) -> dict | None:
         except Exception:
             return None
 
-    raw = await asyncio.to_thread(_run)  # timeout=25 inside _run handles the wall-clock limit
+    raw = await asyncio.to_thread(_run)
     if not raw:
         return None
     try:
@@ -291,7 +294,7 @@ async def probe_stream(url: str) -> dict | None:
 class SourceManager:
     """Manages IPTV playlist sources and global source toggles with JSON persistence."""
 
-    def __init__(self, persist_path: str):
+    def __init__(self, persist_path: str | Path):
         self._path = Path(persist_path)
         self._sources: list[dict] = []
         self._tvh_enabled: bool = True
@@ -361,7 +364,7 @@ class SourceManager:
         self._save()
 
     def get_epg_sources(self) -> list[tuple[str, str]]:
-        """Return [(source_name, epg_url)] for all enabled sources that have an EPG URL."""
+        """Return [(source_name, epg_url)] for enabled sources with an EPG URL."""
         return [
             (src["name"], src["epg_url"])
             for src in self._sources
@@ -381,12 +384,14 @@ class SourceManager:
             )
             try:
                 with urllib.request.urlopen(req, timeout=10) as resp:
-                    return resp.read(1024).decode("utf-8", errors="replace")
+                    return resp.read(1024).decode("utf-8", errors="replace")  # type: ignore[no-any-return]
             except Exception:
                 # Server may not support Range; fall back to a plain GET and read 1 KB
-                req2 = urllib.request.Request(m3u_url, headers={"User-Agent": "slopsoil/1.0"})
+                req2 = urllib.request.Request(
+                    m3u_url, headers={"User-Agent": "slopsoil/1.0"}
+                )
                 with urllib.request.urlopen(req2, timeout=10) as resp:
-                    return resp.read(1024).decode("utf-8", errors="replace")
+                    return resp.read(1024).decode("utf-8", errors="replace")  # type: ignore[no-any-return]
 
         updated = 0
         for i, src in enumerate(self._sources):
@@ -417,7 +422,7 @@ class SourceManager:
 
     def remove_source(self, idx: int) -> str:
         """Remove a source by index. Returns the removed source's name."""
-        name = self._sources[idx]["name"]
+        name = str(self._sources[idx]["name"])
         del self._sources[idx]
         self._save()
         return name
@@ -459,13 +464,18 @@ class IPTVCog(commands.Cog, name="IPTV"):
             return
 
         self.sm.add_source(name, url, channels, epg_url=epg_url)
-        epg_note = f" — EPG found ({epg_url})" if epg_url else " — no EPG URL in playlist"
+        epg_note = (
+            f" — EPG found ({epg_url})" if epg_url else " — no EPG URL in playlist"
+        )
         await ctx.send(
-            f"added source **{name}** with {len(channels)} channel(s) (enabled){epg_note}"
+            f"added source **{name}** with {len(channels)} channel(s)"
+            f" (enabled){epg_note}"
         )
 
     @commands.command(name="sources")
-    async def set_source(self, ctx: commands.Context, action: str = "", *, name: str = ""):
+    async def set_source(
+        self, ctx: commands.Context, action: str = "", *, name: str = ""
+    ):
         """List sources, or enable/disable one by name.
 
         !sources                      — list all sources
@@ -511,7 +521,8 @@ class IPTVCog(commands.Cog, name="IPTV"):
         # ── List sources (no arguments) ───────────────────────────────────────
         if not has_tvh and not iptv_sources:
             await ctx.send(
-                "no sources configured — use `!add-source <name> <url>` to add an IPTV source"
+                "no sources configured"
+                " — use `!add-source <name> <url>` to add an IPTV source"
             )
             return
 

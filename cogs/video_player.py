@@ -740,11 +740,14 @@ class H264VideoPlayer(threading.Thread):
         enc = _ENCODER
         assert enc is not None, "H264VideoPlayer started with no encoder available"
 
-        probe_args = ["-probesize", str(self._probe_size), "-analyzeduration", str(self._probe_size)]
+        probe_args = [
+            "-probesize", str(self._probe_size),
+            "-analyzeduration", str(self._probe_size),
+        ]
         pre_input = enc.pre_input
         rate_args: list[str] = []
         fflags = "+discardcorrupt"
-        # -reconnect flags are HTTP-protocol-specific; FFmpeg rejects them for local files.
+        # -reconnect flags are HTTP-only; FFmpeg rejects them for local files.
         reconnect_args = (
             ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
             if self._url.startswith(("http://", "https://", "rtmp://", "rtsp://"))

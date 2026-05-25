@@ -63,7 +63,7 @@ class Voice(commands.Cog):
 
         log.info("disconnecting from voice in guild '%s'", guild)
         cancel_stream(self.bot, guild.id)
-        await vc.disconnect()
+        await vc.disconnect(force=False)
         await ctx.send("left!")
 
     @commands.command()

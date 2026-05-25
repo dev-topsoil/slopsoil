@@ -19,11 +19,11 @@ from discord.ext import commands
 from cogs.iptv import extract_hls_variant_url as _extract_hls_variant_url
 from cogs.iptv import fetch_xmltv_now_playing as _fetch_xmltv_now_playing
 from cogs.iptv import probe_stream as _probe_stream
+from cogs.stream import start_live_stream
+from cogs.utils import resolve_voice
 
 # {source_name: (fetched_at, {tvg_id: title})} — refreshed every 15 minutes
 _epg_cache: dict[str, tuple[float, dict[str, str]]] = {}
-from cogs.stream import start_live_stream
-from cogs.utils import resolve_voice
 
 if TYPE_CHECKING:
     from bot import SlopSoil
@@ -99,7 +99,9 @@ class TVheadendClient:
         """
         cached_ts, cached_data = self._now_playing_cache
         if time.time() - cached_ts < 60:
-            log.debug("now-playing: returning cached data (%d entries)", len(cached_data))
+            log.debug(
+                "now-playing: returning cached data (%d entries)", len(cached_data)
+            )
             return cached_data
 
         def _fetch() -> dict[str, str]:
@@ -231,7 +233,7 @@ class TV(commands.Cog):
         single static frame due to out-of-display-order B-frames conflicting with
         our max_num_reorder_frames=0 SPS patch.
         """
-        await send(f"checking stream…")
+        await send("checking stream…")
 
         # For HLS master playlists, resolve to the variant URL first.
         # thetvapp.to-style streams declare a separate audio rendition group
@@ -254,7 +256,8 @@ class TV(commands.Cog):
         fps = info["fps"]
         has_audio = info.get("has_audio", True)
         log.info(
-            "IPTV probe: '%s' → codec=%s profile=%s %s %.3ffps b_frames=%s audio=%s(%s)",
+            "IPTV probe: '%s' → codec=%s profile=%s"
+            " %s %.3ffps b_frames=%s audio=%s(%s)",
             name, codec, profile, res, fps, info["has_b_frames"],
             has_audio, info.get("audio_codec") or "none",
         )
@@ -268,7 +271,10 @@ class TV(commands.Cog):
         if not has_audio:
             log.info("IPTV stream '%s' has no audio — injecting silence", name)
 
-        await self._start_stream(send, guild, voice_channel, vc, name, stream_url, subtitle, live=True, audio=has_audio, probe_size=10_000_000)
+        await self._start_stream(
+            send, guild, voice_channel, vc, name, stream_url, subtitle,
+            live=True, audio=has_audio, probe_size=10_000_000,
+        )
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
@@ -353,7 +359,9 @@ class TV(commands.Cog):
                                 src_name, len(data),
                             )
                         except Exception as exc:
-                            log.warning("failed to fetch EPG for '%s': %s", src_name, exc)
+                            log.warning(
+                                "failed to fetch EPG for '%s': %s", src_name, exc
+                            )
                             if cached_data:
                                 iptv_now_playing.update(cached_data)
 
@@ -394,7 +402,7 @@ class TV(commands.Cog):
 
         for page in pages[1:]:
             prompt_msg = await ctx.send(
-                f"more channels available — see next page? (yes/no)"
+                "more channels available — see next page? (yes/no)"
             )
 
             def is_reply(m: discord.Message) -> bool:
@@ -402,7 +410,7 @@ class TV(commands.Cog):
 
             try:
                 reply = await self.bot.wait_for("message", check=is_reply, timeout=30)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await prompt_msg.edit(content="channels: timed out waiting for reply")
                 return
 
@@ -446,7 +454,9 @@ class TV(commands.Cog):
             try:
                 chs = await self.tvh.get_channels()
             except urllib.error.URLError as exc:
-                log.exception("could not reach TVheadend at %s: %s", self.tvh.base_url, exc)
+                log.exception(
+                    "could not reach TVheadend at %s: %s", self.tvh.base_url, exc
+                )
                 await ctx.send(f"could not reach TVheadend: {exc}")
                 return
             except Exception as exc:
@@ -459,10 +469,14 @@ class TV(commands.Cog):
                 name = channel.get("name", "?")
                 number = channel.get("number", "?")
                 uuid = channel["uuid"]
-                log.info("matched TVH channel: '%s' (#%s, uuid: %s)", name, number, uuid)
+                log.info(
+                    "matched TVH channel: '%s' (#%s, uuid: %s)", name, number, uuid
+                )
                 self._cancel_schedule(guild.id)
                 url = self.tvh.stream_url(uuid)
-                await self._start_stream(ctx.send, guild, voice_channel, vc, name, url, f"#{number}")
+                await self._start_stream(
+                    ctx.send, guild, voice_channel, vc, name, url, f"#{number}"
+                )
                 return
 
         iptv_ch = _find_iptv_channel(sm.get_iptv_channels() if sm else [], query)
@@ -471,10 +485,14 @@ class TV(commands.Cog):
             source = iptv_ch.get("source", "IPTV")
             log.info("matched IPTV channel: '%s' (source: %s)", name, source)
             self._cancel_schedule(guild.id)
-            await self._start_iptv_stream(ctx.send, guild, voice_channel, vc, name, iptv_ch["stream_url"], source)
+            await self._start_iptv_stream(
+                ctx.send, guild, voice_channel, vc, name, iptv_ch["stream_url"], source
+            )
             return
 
-        log.info("no channel matched query %r (searched %d TVH + IPTV)", query, len(chs))
+        log.info(
+            "no channel matched query %r (searched %d TVH + IPTV)", query, len(chs)
+        )
         await ctx.send(
             f"channel not found: `{query}`"
             " — use `!channels` to see what's available"
@@ -518,9 +536,15 @@ class TV(commands.Cog):
             if iptv_ch:
                 name = iptv_ch.get("name", "?")
                 source = iptv_ch.get("source", "IPTV")
-                log.info("EPG: no results; matched IPTV channel '%s' (source: %s)", name, source)
+                log.info(
+                    "EPG: no results; matched IPTV channel '%s' (source: %s)",
+                    name, source,
+                )
                 self._cancel_schedule(guild.id)
-                await self._start_iptv_stream(ctx.send, guild, voice_channel, vc, name, iptv_ch["stream_url"], source)
+                await self._start_iptv_stream(
+                    ctx.send, guild, voice_channel, vc, name,
+                    iptv_ch["stream_url"], source,
+                )
                 return
             await ctx.send(f"nothing found in the TV guide for `{query}`")
             return
@@ -672,7 +696,8 @@ class TV(commands.Cog):
                     guild_id,
                 )
                 await self._start_stream(
-                    _send, g, vc_channel_now, vc_now, ch_name, stream_url, f"#{ch_number}"
+                    _send, g, vc_channel_now, vc_now,
+                    ch_name, stream_url, f"#{ch_number}",
                 )
             except asyncio.CancelledError:
                 log.info("scheduled play cancelled for guild %s", guild_id)

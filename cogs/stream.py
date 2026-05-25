@@ -117,7 +117,10 @@ async def start_stream(
     # ── Video + audio (single FFmpeg process) ─────────────────────────────────
     video_player: H264VideoPlayer | None = None
     if _VIDEO_ENCODER is not None:
-        video_player = H264VideoPlayer(url=url, voice_client=vc, fps=60.0, live=live, audio=audio, probe_size=probe_size)
+        video_player = H264VideoPlayer(
+            url=url, voice_client=vc, fps=60.0,
+            live=live, audio=audio, probe_size=probe_size,
+        )
         bot.video_players[guild.id] = video_player
         video_player.start()
         log.info("video player started for '%s'", title)
@@ -244,7 +247,10 @@ async def start_live_stream(
 
     # ── Video (H264VideoPlayer via go-live connection) ────────────────────────
     proxy_vc = _GoLiveVCProxy(conn)
-    video_player = H264VideoPlayer(url=url, voice_client=proxy_vc, fps=60.0, live=live, audio=audio, probe_size=probe_size)
+    video_player = H264VideoPlayer(
+        url=url, voice_client=proxy_vc, fps=60.0,  # type: ignore[arg-type]
+        live=live, audio=audio, probe_size=probe_size,
+    )
     bot.video_players[guild.id] = video_player
     video_player.start()
     log.info("go-live video player started for '%s'", title)

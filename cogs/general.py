@@ -39,9 +39,12 @@ class General(commands.Cog):
             lines += [
                 "",
                 "**TV (TVheadend)**",
-                "  `!channels` — list all channels (TVheadend + IPTV) with now-playing info (paginated)",
-                "  `!play <number or name>` — stream a TVheadend or IPTV channel into voice",
-                "  `!search <show title>` — find a show in the EPG; plays now or schedules",
+                "  `!channels` — list all channels (TVheadend + IPTV)"
+                " with now-playing info (paginated)",
+                "  `!play <number or name>` — stream a TVheadend or IPTV"
+                " channel into voice",
+                "  `!search <show title>` — find a show in the EPG;"
+                " plays now or schedules",
             ]
 
         allowed: set[int] = getattr(self.bot, "allowed_ids", set())
@@ -51,7 +54,8 @@ class General(commands.Cog):
                 "**IPTV**",
                 "  `!add-source <name> <url>` — add an M3U playlist source",
                 "  `!sources` — list all sources and their enabled/disabled state",
-                "  `!sources enable/disable <name>` — enable or disable a source by name",
+                "  `!sources enable/disable <name>` — enable or"
+                " disable a source by name",
                 "  `!delete-source` — remove an IPTV source",
             ]
 
