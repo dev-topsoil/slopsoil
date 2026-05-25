@@ -14,9 +14,9 @@ Built in Python using [discord.py-self](https://github.com/dolfies/discord.py-se
 
 > **Warning:** Self-bots violate Discord's [Terms of Service](https://discord.com/terms). Use at your own risk — your account may be suspended or banned.
 
-![slopsoil streaming a live TV channel via Discord go-live screen share in a voice channel](images/slopsoil.png)
+![slopsoil streaming a live TV channel via Discord go-live screen share in a voice channel](images/slopsoil3.png)
 
-![slopsoil bot commands in Discord showing channel list with EPG now-playing info](images/slopsoil2.png)
+![slopsoil bot commands in Discord showing channel list with EPG now-playing info](images/slopsoil4.png)
 
 ## Table of contents
 
