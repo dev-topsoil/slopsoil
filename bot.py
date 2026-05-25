@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 import davey_compat
 import video_compat
+from permissions import Role, get_user_role
 
 if TYPE_CHECKING:
     from cogs.golive import GoLiveConnection
@@ -55,30 +56,12 @@ class SlopSoil(commands.Bot):
         self.source_manager: SourceManager | None = None
 
     async def setup_hook(self):
-        allowed = self.allowed_ids
-
-        async def is_allowed(ctx: commands.Context) -> bool:
-            if (
-                self.user and ctx.author.id == self.user.id
-            ) or ctx.author.id in allowed:
+        async def has_any_role(ctx: commands.Context) -> bool:
+            if self.user and ctx.author.id == self.user.id:
                 return True
-            # Allow friends
-            if any(
-                r.type == discord.RelationshipType.friend and r.user.id == ctx.author.id
-                for r in self.relationships
-            ):
-                return True
-            # Allow anyone currently in a voice channel the bot is connected to
-            for guild in self.guilds:
-                vc = guild.voice_client
-                if vc is None:
-                    continue
-                member = guild.get_member(ctx.author.id)
-                if member and member.voice and member.voice.channel == vc.channel:
-                    return True
-            return False
+            return get_user_role(self, ctx.author.id) != Role.NONE
 
-        self.add_check(is_allowed)
+        self.add_check(has_any_role)
 
         for ext in ("cogs.general", "cogs.voice", "cogs.iptv"):
             await self.load_extension(ext)
@@ -126,7 +109,7 @@ class SlopSoil(commands.Bot):
     async def on_command_error(
         self, ctx: commands.Context, error: commands.CommandError
     ):
-        # CheckFailure means the user isn't in the allowlist — ignore silently
+        # CheckFailure means the user failed a role check — ignore silently
         if isinstance(error, commands.CheckFailure):
             log.debug(
                 "command [%s] rejected for user %s (id: %s)",

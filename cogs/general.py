@@ -1,23 +1,26 @@
 from discord.ext import commands
 
+from permissions import Role, get_user_role, require_role
+
 
 class General(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    @require_role(Role.VIEWER)
     @commands.command()
     async def ping(self, ctx: commands.Context):
         await ctx.send("pong!")
 
+    @require_role(Role.ADMIN)
     @commands.command()
     async def hello(self, ctx: commands.Context):
         await ctx.send("Hello, world!")
 
+    @require_role(Role.VIEWER)
     @commands.command(name="help")
     async def help_command(self, ctx: commands.Context):
         lines = [
-            "**Commands**",
-            "",
             "**General**",
             "  `!ping` — check if the bot is alive",
             "  `!help` — show this message",
@@ -31,7 +34,7 @@ class General(commands.Cog):
         if self.bot.get_cog("TV"):
             lines += [
                 "",
-                "**TV (TVheadend)**",
+                "**Streaming**",
                 "  `!channels` — list all channels (TVheadend + IPTV)"
                 " with now-playing info (paginated)",
                 "  `!play <number, name, or url>` — stream a TVheadend/IPTV"
@@ -40,8 +43,9 @@ class General(commands.Cog):
                 " plays now or schedules",
             ]
 
-        allowed: set[int] = getattr(self.bot, "allowed_ids", set())
-        if self.bot.get_cog("IPTV") and (not allowed or ctx.author.id in allowed):
+        if self.bot.get_cog("IPTV") and (
+            get_user_role(self.bot, ctx.author.id) == Role.ADMIN  # type: ignore[arg-type]
+        ):
             lines += [
                 "",
                 "**IPTV**",

@@ -26,6 +26,7 @@ Built in Python using [discord.py-self](https://github.com/dolfies/discord.py-se
 - [Configuration](#configuration)
 - [Running](#running)
 - [Docker Compose](#docker-compose)
+- [Permissions](#permissions)
 - [Commands](#commands)
   - [TVheadend streaming](#tvheadend-streaming)
   - [TV guide search](#tv-guide-search)
@@ -78,7 +79,7 @@ cp .env.example .env
 | Variable | Required | Description |
 |---|---|---|
 | `DISCORD_TOKEN` | Yes | Your Discord user account token |
-| `ALLOWED_USER_IDS` | No | Comma-separated user IDs allowed to send commands |
+| `ALLOWED_USER_IDS` | No | Comma-separated user IDs granted the **Admin** role |
 | `TVHEADEND_URL` | No | TVheadend base URL e.g. `http://192.168.1.100:9981` |
 | `TVHEADEND_USER` | No | TVheadend username |
 | `TVHEADEND_PASS` | No | TVheadend password |
@@ -142,22 +143,36 @@ devices:
 
 The bot detects available encoders at startup and falls back to `libopenh264` (software) automatically if the device is absent or unusable, so this is optional.
 
+## Permissions
+
+The bot uses three roles, assigned automatically based on who the user is.
+
+| Role | Who gets it | Inherits from |
+|---|---|---|
+| **Admin** | Users listed in `ALLOWED_USER_IDS` | Friend, Viewer |
+| **Friend** | Users on the bot account's Discord friends list | Viewer |
+| **Viewer** | Any member of a guild the bot is in | — |
+
+Roles are hierarchical — each role can use all commands available to less-privileged roles. Anyone not covered by the above (e.g. a random DM) is silently ignored.
+
+Each command declares its minimum required role with a `@require_role` decorator in `permissions.py`. The role logic is implemented using `IntFlag` bitflags: each role's bit pattern is a superset of every lower-privilege role's bits, so the single check `(user_role & required) == required` enforces the full hierarchy.
+
 ## Commands
 
-| Command | Description |
-|---|---|
-| `!ping` | Check if the bot is alive |
-| `!help` | Show all available commands |
-| `!join` | Join your current voice channel |
-| `!leave` | Disconnect from voice |
-| `!stop` | Stop the current stream |
-| `!channels` | List all channels (TVheadend + IPTV) with now-playing info (paginated) |
-| `!play <name, #, or url>` | Stream a TVheadend/IPTV channel or a yt-dlp URL into voice |
-| `!search <title>` | Find a show in the TV guide; plays now or schedules |
-| `!add-source <name> <url>` | Add an IPTV M3U playlist source |
-| `!sources` | List all sources and their enabled/disabled state |
-| `!sources enable/disable <name>` | Enable or disable a source by name |
-| `!delete-source` | Remove an IPTV source |
+| Command | Min. role | Description |
+|---|---|---|
+| `!ping` | Viewer | Check if the bot is alive |
+| `!help` | Viewer | Show all available commands |
+| `!channels` | Viewer | List all channels (TVheadend + IPTV) with now-playing info (paginated) |
+| `!join` | Friend | Join your current voice channel |
+| `!leave` | Friend | Disconnect from voice |
+| `!stop` | Friend | Stop the current stream |
+| `!play <name, #, or url>` | Friend | Stream a TVheadend/IPTV channel or a yt-dlp URL into voice |
+| `!search <title>` | Friend | Find a show in the TV guide; plays now or schedules |
+| `!add-source <name> <url>` | Admin | Add an IPTV M3U playlist source |
+| `!sources` | Admin | List all sources and their enabled/disabled state |
+| `!sources enable/disable <name>` | Admin | Enable or disable a source by name |
+| `!delete-source` | Admin | Remove an IPTV source |
 
 ### TVheadend streaming
 

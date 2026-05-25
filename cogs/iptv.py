@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, cast
 
 from discord.ext import commands
 
+from permissions import Role, require_role
+
 if TYPE_CHECKING:
     from bot import SlopSoil
 
@@ -442,10 +444,7 @@ class IPTVCog(commands.Cog, name="IPTV"):
         self.bot = cast("SlopSoil", bot)
         self.sm = source_manager
 
-    async def cog_check(self, ctx: commands.Context) -> bool:
-        allowed: set[int] = getattr(self.bot, "allowed_ids", set())
-        return not allowed or ctx.author.id in allowed
-
+    @require_role(Role.ADMIN)
     @commands.command(name="add-source")
     async def add_source(self, ctx: commands.Context, name: str, *, url: str):
         """Add or update an IPTV playlist source from an M3U URL."""
@@ -472,6 +471,7 @@ class IPTVCog(commands.Cog, name="IPTV"):
             f" (enabled){epg_note}"
         )
 
+    @require_role(Role.ADMIN)
     @commands.command(name="sources")
     async def set_source(
         self, ctx: commands.Context, action: str = "", *, name: str = ""
@@ -536,6 +536,7 @@ class IPTVCog(commands.Cog, name="IPTV"):
             lines.append(f"  [{status}] **{src['name']}** — {count} channel(s)")
         await ctx.send("\n".join(lines))
 
+    @require_role(Role.ADMIN)
     @commands.command(name="delete-source")
     async def delete_source(self, ctx: commands.Context):
         """Remove an IPTV playlist source."""
