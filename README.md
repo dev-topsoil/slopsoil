@@ -6,6 +6,8 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 
 > **Keywords:** discord iptv bot, discord youtube stream, stream tv to discord, discord live stream bot, discord voice channel video, iptv discord, self-bot streaming, tvheadend discord, hls discord bot
 
+> **Disclaimer:** slopsoil is a self-bot — it runs on a real Discord user account, not a bot application. Self-bots violate Discord's [Terms of Service](https://discord.com/terms). Use it on an account you are willing to lose, and do not use it in a way that disrupts other users or servers. The authors take no responsibility for account terminations or other consequences.
+
 ---
 
 ## Table of Contents
@@ -27,7 +29,7 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 
 | Channel List | Stream Running |
 |---|---|
-| ![Channel list showing IPTV and TVheadend channels with now-playing info](images/slopsoil3.png) | ![Bot streaming video in a Discord voice channel](images/slopsoil4.png) |
+| ![Channel list showing IPTV and TVheadend channels with now-playing info](images/slopsoil4.png) | ![Bot streaming video in a Discord voice channel](images/slopsoil3.png) |
 
 ---
 
