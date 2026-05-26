@@ -1,10 +1,16 @@
-# slopsoil — Stream YouTube & IPTV to Discord Voice Channels
+![](images/slopsoil-banner.png)  
+![](https://github.com/dev-topsoil/slopsoil/actions/workflows/tests.yml/badge.svg) ![Python](https://img.shields.io/badge/python-%3E=3.1.4-blue.svg)
+# Slopsoil — Stream YouTube & IPTV to Discord Voice Channels
 
-**slopsoil** is a Discord self-bot that streams live TV, IPTV playlists, YouTube videos, and any HTTP/HLS/RTSP stream directly into a Discord voice channel — as a screenshare that all server members can watch together.
+**Slopsoil** is a Discord self-bot that streams live TV, IPTV playlists, YouTube videos, and any HTTP/HLS/RTSP stream directly into a Discord voice channel — as a screenshare that all server members can watch together.
 
 Features include TVheadend integration, M3U/IPTV playlist management with live EPG (now-playing), YouTube playback via yt-dlp, and hardware-accelerated H.264 encoding via VA-API or NVIDIA NVENC.
 
-> **Disclaimer:** slopsoil is a self-bot — it runs on a real Discord user account, not a bot application. Self-bots violate Discord's [Terms of Service](https://discord.com/terms). Use it on an account you are willing to lose, and do not use it in a way that disrupts other users or servers. The authors take no responsibility for account terminations or other consequences.
+> **Disclaimer:**   
+> Slopsoil is a self-bot. It runs on a real Discord user account, not a bot application.  
+> Self-bots violate Discord's [Terms of Service](https://discord.com/terms).  
+> Use it on an account you are willing to lose, and do not use it in a way that disrupts other users or servers.  
+> The authors take no responsibility for account terminations or other consequences.
 
 > **Keywords:** discord iptv bot, discord youtube stream, stream tv to discord, discord live stream bot, discord voice channel video, iptv discord, self-bot streaming, tvheadend discord, hls discord bot
 
@@ -14,6 +20,7 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 
 - [Screenshots](#screenshots)
 - [Features](#features)
+- [How It Works](#how-it-works)
 - [Requirements](#requirements)
 - [Installation — Bare Metal](#installation--bare-metal)
 - [Installation — Docker Compose](#installation--docker-compose)
@@ -21,7 +28,6 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 - [Commands](#commands)
 - [Rebuilding the Docker Container](#rebuilding-the-docker-container)
 - [Hardware Acceleration](#hardware-acceleration)
-- [How It Works](#how-it-works)
 - [Running Tests](#running-tests)
 
 ---
@@ -30,7 +36,7 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 
 | Channel List | Stream Running |
 |---|---|
-| ![Channel list showing IPTV and TVheadend channels with now-playing info](images/slopsoil4.png) | ![Bot streaming video in a Discord voice channel](images/slopsoil3.png) |
+| ![Channel list showing TVheadend channels with now-playing info](images/slopsoil4.png) | ![Bot streaming video in a Discord voice channel](images/slopsoil3.png) |
 
 ---
 
@@ -43,6 +49,14 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 - **H.264 hardware acceleration** — auto-detects NVIDIA NVENC, VA-API (Intel/AMD), or falls back to software encoding
 - **Discord DAVE E2EE support** — correctly handles Discord's end-to-end encryption protocol for voice channels
 - **Role-based access control** — admin, friend, viewer, and none tiers; friends list and guild membership are used automatically
+
+---
+
+## How It Works
+
+slopsoil sends H.264 video and Opus audio directly over Discord's voice UDP protocol, appearing to other users as a screenshare (go-live stream). It patches `discord.py-self` at runtime to add video capability negotiation and implements the full RTP packetization pipeline including SPS/VUI rewriting, RFC 6184 FU-A fragmentation, and DAVE E2EE encryption.
+
+For a detailed technical explanation of the streaming pipeline, the discord.py-self patches, and the esoteric protocol-level discoveries made while building this, see [STREAMING.md](STREAMING.md).
 
 ---
 
@@ -358,11 +372,3 @@ venv/bin/pytest tests/test_permissions.py
 venv/bin/pip install pytest-cov
 venv/bin/pytest --cov --cov-report=term-missing
 ```
-
----
-
-## How It Works
-
-slopsoil sends H.264 video and Opus audio directly over Discord's voice UDP protocol, appearing to other users as a screenshare (go-live stream). It patches `discord.py-self` at runtime to add video capability negotiation and implements the full RTP packetization pipeline including SPS/VUI rewriting, RFC 6184 FU-A fragmentation, and DAVE E2EE encryption.
-
-For a detailed technical explanation of the streaming pipeline, the discord.py-self patches, and the esoteric protocol-level discoveries made while building this, see [STREAMING.md](STREAMING.md).
