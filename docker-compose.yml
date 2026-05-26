@@ -7,11 +7,6 @@ services:
     # Persist IPTV source list across container restarts.
     volumes:
       - slopsoil-data:/root/.local/share/slopsoil
-
-    # Uncomment to pass through a VA-API GPU for h264_vaapi hardware encoding.
-    # The bot falls back to libx264 (software) automatically if the device is
-    # absent, so this is optional.
-    #
     devices:
       - /dev/dri:/dev/dri
 
