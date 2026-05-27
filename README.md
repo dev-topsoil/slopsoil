@@ -1,8 +1,8 @@
 ![](images/slopsoil-banner.png)  
 ![](https://github.com/dev-topsoil/slopsoil/actions/workflows/tests.yml/badge.svg) ![Python](https://img.shields.io/badge/python-%3E=3.1.4-blue.svg)
-# Slopsoil — Stream YouTube & IPTV to Discord Voice Channels
+# Slopsoil - Stream YouTube & IPTV to Discord Voice Channels
 
-**Slopsoil** is a Discord self-bot that streams live TV, IPTV playlists, YouTube videos, and any HTTP/HLS/RTSP stream directly into a Discord voice channel — as a screenshare that all server members can watch together.
+**Slopsoil** is a Discord self-bot that streams live TV, IPTV playlists, YouTube videos, and any HTTP/HLS/RTSP stream directly into a Discord voice channel - as a screenshare that all server members can watch together.
 
 Features include TVheadend integration, M3U/IPTV playlist management with live EPG (now-playing), YouTube playback via yt-dlp, and hardware-accelerated H.264 encoding via VA-API or NVIDIA NVENC.
 
@@ -22,8 +22,8 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 - [Features](#features)
 - [How It Works](#how-it-works)
 - [Requirements](#requirements)
-- [Installation — Bare Metal](#installation--bare-metal)
-- [Installation — Docker Compose](#installation--docker-compose)
+- [Installation - Bare Metal](#installation--bare-metal)
+- [Installation - Docker Compose](#installation--docker-compose)
 - [Configuration](#configuration)
 - [Commands](#commands)
 - [Rebuilding the Docker Container](#rebuilding-the-docker-container)
@@ -42,13 +42,13 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 
 ## Features
 
-- **YouTube & media streaming** — play any URL that yt-dlp supports (YouTube, Twitch VODs, etc.) directly into a voice channel
-- **IPTV / M3U playlist support** — add M3U sources by URL; channels are listed with live EPG now-playing info
-- **TVheadend integration** — browse and play live TV channels from a TVheadend server; search the EPG by show title and schedule playback
-- **Go-live / screenshare delivery** — streams appear as a screenshare so all members in the channel can watch
-- **H.264 hardware acceleration** — auto-detects NVIDIA NVENC, VA-API (Intel/AMD), or falls back to software encoding
-- **Discord DAVE E2EE support** — correctly handles Discord's end-to-end encryption protocol for voice channels
-- **Role-based access control** — admin, friend, viewer, and none tiers; friends list and guild membership are used automatically
+- **YouTube & media streaming** - play any URL that yt-dlp supports (YouTube, Twitch VODs, etc.) directly into a voice channel
+- **IPTV / M3U playlist support** - add M3U sources by URL; channels are listed with live EPG now-playing info
+- **TVheadend integration** - browse and play live TV channels from a TVheadend server; search the EPG by show title and schedule playback
+- **Go-live / screenshare delivery** - streams appear as a screenshare so all members in the channel can watch
+- **H.264 hardware acceleration** - auto-detects NVIDIA NVENC, VA-API (Intel/AMD), or falls back to software encoding
+- **Discord DAVE E2EE support** - correctly handles Discord's end-to-end encryption protocol for voice channels
+- **Role-based access control** - admin, friend, viewer, and none tiers; friends list and guild membership are used automatically
 
 ---
 
@@ -69,7 +69,7 @@ For a detailed technical explanation of the streaming pipeline, the discord.py-s
 | Python 3.11+ | |
 | FFmpeg | Fedora: `ffmpeg-free` (not RPM Fusion's `ffmpeg`). See [Hardware Acceleration](#hardware-acceleration). |
 | libdave / dave.py | The official Discord DAVE E2EE C library; `dave.py` wraps it |
-| A Discord account token | **Not** a bot token — slopsoil runs as a self-bot on a real user account |
+| A Discord account token | **Not** a bot token - slopsoil runs as a self-bot on a real user account |
 
 ### Docker
 
@@ -78,7 +78,7 @@ For a detailed technical explanation of the streaming pipeline, the discord.py-s
 
 ---
 
-## Installation — Bare Metal
+## Installation - Bare Metal
 
 ### 1. Clone the repository
 
@@ -109,12 +109,12 @@ pip install -r requirements.txt
 ```
 
 This installs:
-- `discord.py-self` — self-bot library with voice support
-- `PyNaCl` — libsodium bindings for RTP encryption
-- `python-dotenv` — `.env` file loading
-- `davey` — stub package (replaced at runtime by the DAVE compatibility shim)
-- `dave.py` — DisnakeDev's official libdave Python bindings (working DAVE/E2EE)
-- `yt-dlp` — YouTube and media downloader
+- `discord.py-self` - self-bot library with voice support
+- `PyNaCl` - libsodium bindings for RTP encryption
+- `python-dotenv` - `.env` file loading
+- `davey` - stub package (replaced at runtime by the DAVE compatibility shim)
+- `dave.py` - DisnakeDev's official libdave Python bindings (working DAVE/E2EE)
+- `yt-dlp` - YouTube and media downloader
 
 ### 4. Configure the bot
 
@@ -134,7 +134,7 @@ python3 bot.py
 
 ---
 
-## Installation — Docker Compose
+## Installation - Docker Compose
 
 ### 1. Clone the repository
 
@@ -172,13 +172,13 @@ docker compose logs -f
 All configuration is done via environment variables in `.env`:
 
 ```env
-# Required — your Discord account token (not a bot token)
+# Required - your Discord account token (not a bot token)
 DISCORD_TOKEN=your_token_here
 
 # Comma-separated Discord user IDs that can control the bot
 ALLOWED_USER_IDS=123456789012345678,987654321098765432
 
-# Optional — TVheadend server (all three must be set to enable TV commands)
+# Optional - TVheadend server (all three must be set to enable TV commands)
 TVHEADEND_URL=http://192.168.1.100:9981
 TVHEADEND_USER=admin
 TVHEADEND_PASS=yourpassword
@@ -199,7 +199,7 @@ TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, 
 1. Open Discord in a browser
 2. Open DevTools (F12) → Network tab
 3. Filter for requests to `discord.com/api`
-4. Look for the `Authorization` header on any request — that value is your token
+4. Look for the `Authorization` header on any request - that value is your token
 
 > **Security:** Keep your token private. Anyone with your token can access your Discord account.
 
@@ -221,9 +221,9 @@ TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, 
 |---|---|---|
 | `!play <channel number>` | Friend | Play a TVheadend channel by number |
 | `!play <channel name>` | Friend | Play a channel by name (case-insensitive substring match; searches TVheadend and IPTV) |
-| `!play <URL>` | Friend | Play any URL — YouTube, direct HLS/HTTP/RTSP streams, etc. |
+| `!play <URL>` | Friend | Play any URL - YouTube, direct HLS/HTTP/RTSP streams, etc. |
 | `!channels` | Viewer | List all available channels with live now-playing info (paginated) |
-| `!search <show title>` | Friend | Search EPG for a show — plays immediately if airing now, or schedules for upcoming airtime |
+| `!search <show title>` | Friend | Search EPG for a show - plays immediately if airing now, or schedules for upcoming airtime |
 
 ### IPTV Source Management
 
@@ -265,7 +265,7 @@ git pull
 docker compose up -d --build
 ```
 
-If you only changed `.env` (no code changes), a restart is enough — no rebuild needed:
+If you only changed `.env` (no code changes), a restart is enough - no rebuild needed:
 
 ```bash
 docker compose restart
