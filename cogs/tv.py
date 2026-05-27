@@ -11,7 +11,8 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone, tzinfo as _TZInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlparse, urlunparse
@@ -220,9 +221,20 @@ def _find_iptv_channel(channels: list[dict], query: str) -> dict | None:
     return next((c for c in channels if q in c.get("name", "").lower()), None)
 
 
+def _get_display_tz() -> _TZInfo:
+    tz_name = os.environ.get("TIMEZONE", "").strip()
+    if tz_name:
+        try:
+            return ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            log.warning("TIMEZONE=%r is not a valid IANA timezone; falling back to local", tz_name)
+    return datetime.now().astimezone().tzinfo or timezone.utc
+
+
 def _fmt_time(ts: float) -> str:
-    """Format a Unix timestamp as a human-readable local time (e.g. '7:30 PM')."""
-    return datetime.fromtimestamp(ts).strftime("%I:%M %p").lstrip("0")
+    """Format a Unix timestamp as a human-readable time in the configured timezone."""
+    tz = _get_display_tz()
+    return datetime.fromtimestamp(ts, tz=tz).strftime("%I:%M %p").lstrip("0")
 
 
 class TV(commands.Cog):
