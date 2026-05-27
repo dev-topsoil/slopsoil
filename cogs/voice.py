@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+import discord
 from discord.ext import commands
 
 from cogs.stream import cancel_stream
@@ -90,6 +91,35 @@ class Voice(commands.Cog):
             vc.stop()
 
         await ctx.send("stopped")
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        # Only act when someone leaves a channel (not mute/deafen/move-within).
+        if before.channel is None or before.channel == after.channel:
+            return
+
+        vc = member.guild.voice_client
+        if vc is None or vc.channel != before.channel:
+            return
+
+        # Stay if any members other than the bot itself are still present.
+        # Can't use m.bot here — selfbot accounts have bot=False on their user object.
+        bot_id = self.bot.user.id if self.bot.user else None
+        if any(m.id != bot_id for m in vc.channel.members):
+            return
+
+        log.info(
+            "all users left '%s' in guild '%s' — disconnecting",
+            vc.channel,
+            member.guild,
+        )
+        cancel_stream(self.bot, member.guild.id)
+        await vc.disconnect(force=False)
 
 
 async def setup(bot: commands.Bot):
