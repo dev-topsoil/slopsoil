@@ -78,6 +78,44 @@ async def _yt_cleanup_after_stream(task: asyncio.Task, tmp_dir: str) -> None:
     finally:
         _yt_remove_dir(tmp_dir)
 
+
+async def _yt_extract_live_url(url: str) -> tuple[str, str] | None:
+    """Return (stream_url, title) if url is a live broadcast, else None.
+
+    Uses yt-dlp metadata only — no download — so it's fast.  If the stream is
+    upcoming (not yet started) or the URL is not a live broadcast, returns None.
+    """
+    import yt_dlp
+
+    def _run() -> tuple[str, str] | None:
+        opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+        if not info or info.get("live_status") != "is_live":
+            return None
+
+        title: str = info.get("title") or "YouTube Live"
+
+        # Prefer an HLS variant with both video and audio tracks.
+        formats: list[dict] = info.get("formats") or []
+        hls = [
+            f for f in formats
+            if f.get("protocol", "").startswith("m3u8")
+            and f.get("url")
+            and f.get("vcodec") not in (None, "none")
+        ]
+        if hls:
+            best = max(hls, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))
+            return best["url"], title
+
+        if info.get("url"):
+            return info["url"], title
+
+        return None
+
+    return await asyncio.to_thread(_run)
+
 if TYPE_CHECKING:
     from bot import SlopSoil
 
@@ -509,11 +547,31 @@ class TV(commands.Cog):
 
         if query.startswith(("http://", "https://")):
             log.info(
-                "play: URL detected, using yt-dlp (requested by %s in guild '%s')",
+                "play: URL detected (requested by %s in guild '%s')",
                 ctx.author,
                 guild,
             )
-            status = await ctx.send("downloading…")
+            status = await ctx.send("checking…")
+
+            # Check for a live broadcast before attempting a full download.
+            try:
+                live_result = await _yt_extract_live_url(query)
+            except Exception as exc:
+                log.warning("live-check failed for %r: %s", query, exc)
+                live_result = None
+
+            if live_result is not None:
+                stream_url, title = live_result
+                log.info("play: live stream '%s' (requested by %s)", title, ctx.author)
+                await status.edit(content=f"starting **{title}**…")
+                self._cancel_schedule(guild.id)
+                await self._start_iptv_stream(
+                    ctx.send, guild, voice_channel, vc, title, stream_url
+                )
+                return
+
+            # Not a live broadcast: download then play.
+            await status.edit(content="downloading…")
             tmp_dir = tempfile.mkdtemp(prefix="slopsoil_yt_")
             try:
                 try:
