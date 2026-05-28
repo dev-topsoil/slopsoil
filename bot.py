@@ -78,6 +78,13 @@ class SlopSoil(commands.Bot):
                 "TVHEADEND_URL/USER/PASS not set — !play and !channels disabled"
             )
 
+        await self.load_extension("cogs.jellyfin")
+        jf_url = os.environ.get("JELLYFIN_URL")
+        if jf_url:
+            log.info("loaded extension: cogs.jellyfin (Jellyfin: %s)", jf_url)
+        else:
+            log.warning("JELLYFIN_URL/API_KEY not set — !media will report unconfigured")
+
     async def close(self) -> None:
         # Cancel active stream tasks and terminate FFmpeg processes before the
         # event loop shuts down, so a single Ctrl+C exits cleanly.
