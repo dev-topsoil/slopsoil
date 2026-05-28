@@ -512,7 +512,7 @@ class TV(commands.Cog):
                 return m.author == ctx.author and m.channel == ctx.channel
 
             try:
-                reply = await self.bot.wait_for("message", check=is_reply, timeout=10)
+                reply = await self.bot.wait_for("message", check=is_reply, timeout=30)
             except TimeoutError:
                 await prompt_msg.edit(content="channels: timed out waiting for reply")
                 return
@@ -791,7 +791,7 @@ class TV(commands.Cog):
             )
 
         try:
-            reply = await self.bot.wait_for("message", check=_yn_check, timeout=10.0)
+            reply = await self.bot.wait_for("message", check=_yn_check, timeout=30.0)
         except TimeoutError:
             await ctx.send("no response — schedule cancelled")
             return

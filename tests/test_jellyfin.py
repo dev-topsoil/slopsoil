@@ -7,7 +7,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cogs.jellyfin import JellyfinClient, _fmt_item, _parse_episode_query
+from cogs.jellyfin import Jellyfin, JellyfinClient, _fmt_item, _parse_episode_query
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared across sections
+# ---------------------------------------------------------------------------
+
+
+def _make_ctx(author_id: int = 1, channel_id: int = 10) -> MagicMock:
+    ctx = MagicMock()
+    ctx.author.id = author_id
+    ctx.channel.id = channel_id
+    ctx.send = AsyncMock()
+    return ctx
+
+
+def _make_jellyfin_cog(client=None) -> Jellyfin:
+    bot = MagicMock()
+    bot.user.id = 999
+    cog = Jellyfin(bot, client)
+    return cog
 
 
 # ---------------------------------------------------------------------------
@@ -336,3 +356,95 @@ async def test_find_episode_no_series_found(client):
 
     results = await client.find_episode("unknown show", season=1, episode=1)
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# Jellyfin cog — _wait_for_number
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wait_for_number_valid_selection():
+    cog = _make_jellyfin_cog()
+    ctx = _make_ctx()
+    reply = MagicMock()
+    reply.content = "2"
+    cog.bot.wait_for = AsyncMock(return_value=reply)
+
+    result = await cog._wait_for_number(ctx, max_val=3)
+    assert result == 2
+
+
+@pytest.mark.asyncio
+async def test_wait_for_number_out_of_range_returns_none():
+    cog = _make_jellyfin_cog()
+    ctx = _make_ctx()
+    reply = MagicMock()
+    reply.content = "99"
+    cog.bot.wait_for = AsyncMock(return_value=reply)
+
+    result = await cog._wait_for_number(ctx, max_val=3)
+    assert result is None
+    ctx.send.assert_awaited_once()
+    assert "1 and 3" in ctx.send.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_wait_for_number_timeout_returns_none():
+    cog = _make_jellyfin_cog()
+    ctx = _make_ctx()
+    cog.bot.wait_for = AsyncMock(side_effect=TimeoutError)
+
+    result = await cog._wait_for_number(ctx, max_val=5)
+    assert result is None
+    ctx.send.assert_awaited_once()
+    assert "timed out" in ctx.send.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_wait_for_number_command_cancels():
+    """Typing a new command while a prompt is active cancels the selection."""
+    cog = _make_jellyfin_cog()
+    ctx = _make_ctx()
+    reply = MagicMock()
+    reply.content = "!play something"
+    cog.bot.wait_for = AsyncMock(return_value=reply)
+
+    result = await cog._wait_for_number(ctx, max_val=5)
+    assert result is None
+    ctx.send.assert_awaited_once()
+    assert "cancelled" in ctx.send.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_wait_for_number_boundary_values():
+    cog = _make_jellyfin_cog()
+    ctx = _make_ctx()
+
+    for value in ("1", "5"):
+        ctx.send.reset_mock()
+        reply = MagicMock()
+        reply.content = value
+        cog.bot.wait_for = AsyncMock(return_value=reply)
+        result = await cog._wait_for_number(ctx, max_val=5)
+        assert result == int(value)
+
+
+# ---------------------------------------------------------------------------
+# Jellyfin cog — unconfigured client
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_media_command_not_configured(monkeypatch):
+    """!media should send a helpful error if JELLYFIN_URL/API_KEY are not set."""
+    cog = _make_jellyfin_cog(client=None)
+    ctx = _make_ctx()
+
+    # Invoke the underlying coroutine directly, bypassing the command decorator.
+    await cog.media.callback(cog, ctx, query="inception")
+
+    ctx.send.assert_awaited_once()
+    msg = ctx.send.call_args[0][0]
+    assert "not configured" in msg.lower()
+    assert "JELLYFIN_URL" in msg

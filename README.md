@@ -46,6 +46,7 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 - **MJPEG / CGI stream support** - play `.cgi` video URLs (IP cameras, legacy streaming servers) and MJPEG-over-HTTP streams directly
 - **IPTV / M3U playlist support** - add M3U sources by URL; channels are listed with live EPG now-playing info
 - **TVheadend integration** - browse and play live TV channels from a TVheadend server; search the EPG by show title and schedule playback; showtimes are shown in the configured timezone
+- **Jellyfin integration** - search and stream movies, series, and episodes from a Jellyfin media server; transcoding is offloaded to Jellyfin so the bot streams H.264/AAC with subtitles suppressed
 - **Auto-leave on empty channel** - the bot automatically leaves and stops streaming when the last user leaves the voice channel
 - **Go-live / screenshare delivery** - streams appear as a screenshare so all members in the channel can watch
 - **H.264 hardware acceleration** - auto-detects NVIDIA NVENC, VA-API (Intel/AMD), or falls back to software encoding
@@ -242,7 +243,7 @@ TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, 
 
 | Command | Role | Description |
 |---|---|---|
-| `!media <title>` | Friend | Search Jellyfin for a movie, series, or episode. Single movie matches are selected automatically; multiple results are listed for you to choose from by number. |
+| `!media <title>` | Friend | Search Jellyfin for a movie or series and stream it into your voice channel. A single movie match plays immediately. For series, the bot walks you through season → episode selection. Accepts an optional `sXXeYY` suffix (e.g. `!media breaking bad s03e05`) to jump directly to a specific episode. Transcoding is handled server-side by Jellyfin; subtitles are always suppressed. |
 
 ### IPTV Source Management
 
