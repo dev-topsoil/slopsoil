@@ -1,0 +1,256 @@
+"""Tests for cogs/jellyfin.py — pure functions and JellyfinClient API calls."""
+from __future__ import annotations
+
+import json
+from io import BytesIO
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from cogs.jellyfin import JellyfinClient, _fmt_item, _parse_episode_query
+
+
+# ---------------------------------------------------------------------------
+# _parse_episode_query
+# ---------------------------------------------------------------------------
+
+
+def test_parse_no_episode_code():
+    show, season, episode = _parse_episode_query("inception")
+    assert show == "inception"
+    assert season is None
+    assert episode is None
+
+
+def test_parse_lowercase():
+    show, season, episode = _parse_episode_query("rick and morty s02e01")
+    assert show == "rick and morty"
+    assert season == 2
+    assert episode == 1
+
+
+def test_parse_uppercase():
+    show, season, episode = _parse_episode_query("Breaking Bad S03E10")
+    assert show == "Breaking Bad"
+    assert season == 3
+    assert episode == 10
+
+
+def test_parse_mixed_case():
+    show, season, episode = _parse_episode_query("The Office S01e03")
+    assert show == "The Office"
+    assert season == 1
+    assert episode == 3
+
+
+def test_parse_leading_trailing_whitespace_stripped():
+    show, season, episode = _parse_episode_query("  Arrested Development  s04e01  ")
+    assert show == "Arrested Development"
+    assert season == 4
+    assert episode == 1
+
+
+def test_parse_only_episode_code_gives_empty_show():
+    show, season, episode = _parse_episode_query("s01e05")
+    assert show == ""
+    assert season == 1
+    assert episode == 5
+
+
+def test_parse_multi_digit_season_and_episode():
+    show, season, episode = _parse_episode_query("show s12e24")
+    assert show == "show"
+    assert season == 12
+    assert episode == 24
+
+
+def test_parse_uses_first_match_only():
+    """Extra sXXeYY tokens after the first are ignored."""
+    show, season, episode = _parse_episode_query("show s01e01 s02e02")
+    assert show == "show"
+    assert season == 1
+    assert episode == 1
+
+
+def test_parse_code_not_on_word_boundary_ignored():
+    """Substrings like 'season01ep01' should not match."""
+    show, season, episode = _parse_episode_query("seas01ep01")
+    assert show == "seas01ep01"
+    assert season is None
+    assert episode is None
+
+
+# ---------------------------------------------------------------------------
+# _fmt_item
+# ---------------------------------------------------------------------------
+
+
+def test_fmt_movie_with_year():
+    item = {"Type": "Movie", "Name": "Inception", "ProductionYear": 2010}
+    assert _fmt_item(item) == "Inception (2010)"
+
+
+def test_fmt_movie_without_year():
+    item = {"Type": "Movie", "Name": "Inception"}
+    assert _fmt_item(item) == "Inception"
+
+
+def test_fmt_series_with_year():
+    item = {"Type": "Series", "Name": "Breaking Bad", "ProductionYear": 2008}
+    assert _fmt_item(item) == "Breaking Bad (2008)"
+
+
+def test_fmt_episode_with_season_and_ep():
+    item = {
+        "Type": "Episode",
+        "Name": "Pilot",
+        "SeriesName": "Breaking Bad",
+        "ParentIndexNumber": 1,
+        "IndexNumber": 1,
+    }
+    assert _fmt_item(item) == "Breaking Bad — S01E01 — Pilot"
+
+
+def test_fmt_episode_zero_padded():
+    item = {
+        "Type": "Episode",
+        "Name": "Fly",
+        "SeriesName": "Breaking Bad",
+        "ParentIndexNumber": 3,
+        "IndexNumber": 10,
+    }
+    assert _fmt_item(item) == "Breaking Bad — S03E10 — Fly"
+
+
+def test_fmt_episode_without_season_ep():
+    item = {
+        "Type": "Episode",
+        "Name": "Pilot",
+        "SeriesName": "Breaking Bad",
+    }
+    assert _fmt_item(item) == "Breaking Bad — Pilot"
+
+
+# ---------------------------------------------------------------------------
+# JellyfinClient HTTP methods (urlopen mocked)
+# ---------------------------------------------------------------------------
+
+
+def _mock_response(data: dict):
+    """Return a context-manager mock that yields a response with JSON body."""
+    body = json.dumps(data).encode()
+    resp = MagicMock()
+    resp.read.return_value = body
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    return resp
+
+
+@pytest.fixture
+def client():
+    return JellyfinClient(url="http://jellyfin.local:8096", api_key="testkey")
+
+
+@pytest.mark.asyncio
+async def test_search_returns_items(client):
+    payload = {
+        "Items": [
+            {"Id": "1", "Name": "Inception", "Type": "Movie", "ProductionYear": 2010},
+            {"Id": "2", "Name": "Interstellar", "Type": "Movie", "ProductionYear": 2014},
+        ]
+    }
+    with patch("urllib.request.urlopen", return_value=_mock_response(payload)):
+        results = await client.search("ception")
+    assert len(results) == 2
+    assert results[0]["Name"] == "Inception"
+
+
+@pytest.mark.asyncio
+async def test_search_empty_result(client):
+    with patch("urllib.request.urlopen", return_value=_mock_response({"Items": []})):
+        results = await client.search("nothing")
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_get_seasons_sorted(client):
+    payload = {
+        "Items": [
+            {"Id": "s2", "Name": "Season 2", "IndexNumber": 2},
+            {"Id": "s1", "Name": "Season 1", "IndexNumber": 1},
+            {"Id": "s3", "Name": "Season 3", "IndexNumber": 3},
+        ]
+    }
+    with patch("urllib.request.urlopen", return_value=_mock_response(payload)):
+        seasons = await client.get_seasons("series-abc")
+    assert [s["IndexNumber"] for s in seasons] == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_get_episodes_sorted(client):
+    payload = {
+        "Items": [
+            {"Id": "e3", "Name": "C", "IndexNumber": 3},
+            {"Id": "e1", "Name": "A", "IndexNumber": 1},
+            {"Id": "e2", "Name": "B", "IndexNumber": 2},
+        ]
+    }
+    with patch("urllib.request.urlopen", return_value=_mock_response(payload)):
+        episodes = await client.get_episodes("series-abc", "season-1")
+    assert [e["IndexNumber"] for e in episodes] == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_find_episode_resolves_via_series(client):
+    """find_episode should search for a series, then navigate seasons → episode."""
+    series = [{"Id": "series-1", "Name": "Rick and Morty", "Type": "Series"}]
+    seasons = [
+        {"Id": "s1", "Name": "Season 1", "IndexNumber": 1},
+        {"Id": "s2", "Name": "Season 2", "IndexNumber": 2},
+    ]
+    episodes_s2 = [
+        {"Id": "e1", "Name": "Ricksy Business", "IndexNumber": 1, "ParentIndexNumber": 2},
+        {"Id": "e2", "Name": "A Rickle in Time", "IndexNumber": 2, "ParentIndexNumber": 2},
+    ]
+
+    async def _search(q, limit=25):
+        return series
+
+    async def _get_seasons(sid):
+        assert sid == "series-1"
+        return seasons
+
+    async def _get_episodes(sid, season_id):
+        assert sid == "series-1"
+        assert season_id == "s2"
+        return episodes_s2
+
+    client.search = _search
+    client.get_seasons = _get_seasons
+    client.get_episodes = _get_episodes
+
+    results = await client.find_episode("rick and morty", season=2, episode=1)
+    assert len(results) == 1
+    assert results[0]["Id"] == "e1"
+
+
+@pytest.mark.asyncio
+async def test_find_episode_no_matching_season(client):
+    series = [{"Id": "series-1", "Name": "Show", "Type": "Series"}]
+    seasons = [{"Id": "s1", "Name": "Season 1", "IndexNumber": 1}]
+
+    client.search = AsyncMock(return_value=series)
+    client.get_seasons = AsyncMock(return_value=seasons)
+    client.get_episodes = AsyncMock(return_value=[])
+
+    results = await client.find_episode("show", season=5, episode=1)
+    assert results == []
+    client.get_episodes.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_find_episode_no_series_found(client):
+    client.search = AsyncMock(return_value=[])
+
+    results = await client.find_episode("unknown show", season=1, episode=1)
+    assert results == []

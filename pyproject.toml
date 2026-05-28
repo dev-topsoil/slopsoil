@@ -20,6 +20,9 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = ["-ra", "-q", "--strict-markers", "--strict-config"]
+filterwarnings = [
+    "ignore::DeprecationWarning:discord",
+]
 
 [tool.coverage.run]
 source = ["."]
