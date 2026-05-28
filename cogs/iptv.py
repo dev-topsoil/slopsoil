@@ -242,7 +242,7 @@ async def probe_stream(url: str) -> dict | None:
             r = subprocess.run(
                 [
                     "ffprobe",
-                    "-v", "quiet",
+                    "-v", "warning",
                     "-show_streams",          # all streams — no -select_streams
                     "-print_format", "json",
                     # 10 MB / 10 s: HLS streams need time to follow the master
@@ -254,10 +254,20 @@ async def probe_stream(url: str) -> dict | None:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=25,
+                timeout=30,
             )
-            return r.stdout if r.returncode == 0 else None
-        except Exception:
+            if r.returncode != 0:
+                log.warning("ffprobe failed (exit %d) for %s", r.returncode, url)
+                if r.stderr:
+                    for line in r.stderr.splitlines():
+                        log.warning("ffprobe stderr: %s", line)
+                return None
+            return r.stdout
+        except subprocess.TimeoutExpired:
+            log.warning("ffprobe timed out for %s", url)
+            return None
+        except Exception as exc:
+            log.warning("ffprobe error for %s: %s", url, exc)
             return None
 
     raw = await asyncio.to_thread(_run)

@@ -152,6 +152,88 @@ def client():
 
 
 @pytest.mark.asyncio
+async def test_get_user_id_fetches_and_caches(client):
+    users = [{"Id": "user-abc", "Name": "Admin"}]
+    with patch("urllib.request.urlopen", return_value=_mock_response(users)):
+        uid = await client._get_user_id()
+    assert uid == "user-abc"
+    # Second call should use cache, not make another request
+    with patch("urllib.request.urlopen", side_effect=Exception("should not be called")):
+        uid2 = await client._get_user_id()
+    assert uid2 == "user-abc"
+
+
+@pytest.mark.asyncio
+async def test_get_user_id_returns_none_on_failure(client):
+    with patch("urllib.request.urlopen", side_effect=Exception("403 Forbidden")):
+        uid = await client._get_user_id()
+    assert uid is None
+
+
+def _make_playback_response(transcoding_url: str | None = None, direct_url: str | None = None):
+    source: dict = {"Id": "source-1"}
+    if transcoding_url:
+        source["TranscodingUrl"] = transcoding_url
+    if direct_url:
+        source["DirectStreamUrl"] = direct_url
+    return _mock_response({"MediaSources": [source], "PlaySessionId": "sess-1"})
+
+
+@pytest.mark.asyncio
+async def test_get_stream_url_uses_playback_info(client):
+    client._user_id = "user-abc"  # pre-cache so no extra fetch
+    pb_resp = _make_playback_response(
+        transcoding_url="/Videos/item-1/main/stream.m3u8?DeviceId=slopsoil&PlaySessionId=abc"
+    )
+    with patch("urllib.request.urlopen", return_value=pb_resp):
+        url = await client.get_stream_url("item-1")
+    assert url is not None
+    assert "stream.m3u8" in url
+    assert "api_key=testkey" in url
+    assert "SubtitleStreamIndex=-1" in url
+
+
+@pytest.mark.asyncio
+async def test_get_stream_url_overrides_subtitle_index(client):
+    """Jellyfin may set SubtitleStreamIndex=0 in the URL from user profile settings; we must override it."""
+    client._user_id = "user-abc"
+    pb_resp = _make_playback_response(
+        transcoding_url="/Videos/item-1/stream.m3u8?SubtitleStreamIndex=0&PlaySessionId=abc"
+    )
+    with patch("urllib.request.urlopen", return_value=pb_resp):
+        url = await client.get_stream_url("item-1")
+    assert url is not None
+    assert "SubtitleStreamIndex=-1" in url
+    assert "SubtitleStreamIndex=0" not in url
+
+
+@pytest.mark.asyncio
+async def test_get_stream_url_falls_back_to_direct_stream(client):
+    client._user_id = "user-abc"
+    pb_resp = _make_playback_response(direct_url="/Videos/item-1/stream?Container=mp4")
+    with patch("urllib.request.urlopen", return_value=pb_resp):
+        url = await client.get_stream_url("item-1")
+    assert url is not None
+    assert "api_key=testkey" in url
+
+
+@pytest.mark.asyncio
+async def test_get_stream_url_returns_none_on_empty_sources(client):
+    client._user_id = "user-abc"
+    with patch("urllib.request.urlopen", return_value=_mock_response({"MediaSources": []})):
+        url = await client.get_stream_url("item-1")
+    assert url is None
+
+
+@pytest.mark.asyncio
+async def test_get_stream_url_returns_none_on_request_failure(client):
+    client._user_id = "user-abc"
+    with patch("urllib.request.urlopen", side_effect=Exception("connection refused")):
+        url = await client.get_stream_url("item-1")
+    assert url is None
+
+
+@pytest.mark.asyncio
 async def test_search_returns_items(client):
     payload = {
         "Items": [
