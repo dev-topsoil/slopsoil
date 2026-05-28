@@ -43,6 +43,14 @@ class General(commands.Cog):
                 " plays now or schedules",
             ]
 
+        if self.bot.get_cog("Jellyfin"):
+            lines += [
+                "",
+                "**Jellyfin**",
+                "  `!media <title>` — search Jellyfin for a movie, series,"
+                " or episode and select it for playback",
+            ]
+
         if self.bot.get_cog("IPTV") and (
             get_user_role(self.bot, ctx.author.id) == Role.ADMIN  # type: ignore[arg-type]
         ):

@@ -46,6 +46,7 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 - **MJPEG / CGI stream support** - play `.cgi` video URLs (IP cameras, legacy streaming servers) and MJPEG-over-HTTP streams directly
 - **IPTV / M3U playlist support** - add M3U sources by URL; channels are listed with live EPG now-playing info
 - **TVheadend integration** - browse and play live TV channels from a TVheadend server; search the EPG by show title and schedule playback; showtimes are shown in the configured timezone
+- **Jellyfin integration** - search and stream movies, series, and episodes from a Jellyfin media server; transcoding is offloaded to Jellyfin so the bot streams H.264/AAC with subtitles suppressed
 - **Auto-leave on empty channel** - the bot automatically leaves and stops streaming when the last user leaves the voice channel
 - **Go-live / screenshare delivery** - streams appear as a screenshare so all members in the channel can watch
 - **H.264 hardware acceleration** - auto-detects NVIDIA NVENC, VA-API (Intel/AMD), or falls back to software encoding
@@ -188,6 +189,10 @@ TVHEADEND_PASS=yourpassword
 # Optional - IANA timezone for showtimes displayed by !search (e.g. America/New_York)
 # If unset, the system timezone of the machine running the bot is used.
 TIMEZONE=
+
+# Optional - Jellyfin server (both must be set to enable Jellyfin commands)
+JELLYFIN_URL=http://192.168.1.100:8096
+JELLYFIN_API_KEY=your_api_key_here
 ```
 
 | Variable | Required | Description |
@@ -198,6 +203,8 @@ TIMEZONE=
 | `TVHEADEND_USER` | No | TVheadend username |
 | `TVHEADEND_PASS` | No | TVheadend password |
 | `TIMEZONE` | No | [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for `!search` showtimes (e.g. `America/Chicago`). Defaults to the system timezone. |
+| `JELLYFIN_URL` | No | Base URL of your Jellyfin server |
+| `JELLYFIN_API_KEY` | No | Jellyfin API key (generate in Dashboard → API Keys) |
 
 TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, the `!channels`, `!search`, and TVheadend-backed `!play` commands are not loaded.
 
@@ -231,6 +238,12 @@ TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, 
 | `!play <URL>` | Friend | Play any URL — YouTube VODs, YouTube Live streams, direct HLS/HTTP/RTSP streams, `.cgi` MJPEG feeds, etc. Live streams are detected automatically and streamed without downloading. |
 | `!channels` | Viewer | List all available channels with live now-playing info (paginated) |
 | `!search <show title>` | Friend | Search EPG for a show — plays immediately if airing now, or schedules for upcoming airtime. Showtimes are shown in the `TIMEZONE` configured in `.env`. |
+
+### Jellyfin
+
+| Command | Role | Description |
+|---|---|---|
+| `!media <title>` | Friend | Search Jellyfin for a movie or series and stream it into your voice channel. A single movie match plays immediately. For series, the bot walks you through season → episode selection. Accepts an optional `sXXeYY` suffix (e.g. `!media breaking bad s03e05`) to jump directly to a specific episode. Transcoding is handled server-side by Jellyfin; subtitles are always suppressed. |
 
 ### IPTV Source Management
 

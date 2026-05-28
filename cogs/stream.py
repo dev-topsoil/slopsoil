@@ -53,7 +53,10 @@ def cancel_stream(bot: SlopSoil, guild_id: int) -> None:
     vp = bot.video_players.pop(guild_id, None)
     if vp is not None:
         log.info("stopping video player for guild %s", guild_id)
-        vp.stop()
+        try:
+            vp.stop()
+        except Exception:
+            log.warning("error stopping video player for guild %s", guild_id, exc_info=True)
 
 
 def cancel_live_stream(bot: SlopSoil, guild_id: int) -> None:

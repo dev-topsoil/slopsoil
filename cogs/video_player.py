@@ -395,11 +395,18 @@ def _test_encoder(name: str, pre_input: list[str]) -> bool:
 
 def _detect_encoder() -> _EncoderConfig | None:
     """Pick the best available H.264 encoder. Returns None if nothing works."""
-    result = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-encoders"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        log.warning(
+            "ffmpeg not found — video streaming disabled. "
+            "Install ffmpeg (Fedora: ffmpeg-free, Debian/Ubuntu: ffmpeg)."
+        )
+        return None
     available = result.stdout
 
     vaapi_pre = ["-vaapi_device", "/dev/dri/renderD128"]

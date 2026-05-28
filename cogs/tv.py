@@ -783,19 +783,24 @@ class TV(commands.Cog):
         )
 
         def _yn_check(msg: discord.Message) -> bool:
+            content = msg.content.strip()
             return (
                 msg.author.id == ctx.author.id
                 and msg.channel.id == ctx.channel.id
-                and msg.content.strip().lower() in ("y", "yes", "n", "no")
+                and (content.lower() in ("y", "yes", "n", "no") or content.startswith("!"))
             )
 
         try:
-            reply = await self.bot.wait_for("message", check=_yn_check, timeout=60.0)
+            reply = await self.bot.wait_for("message", check=_yn_check, timeout=30.0)
         except TimeoutError:
             await ctx.send("no response — schedule cancelled")
             return
 
-        if reply.content.strip().lower() not in ("y", "yes"):
+        content = reply.content.strip()
+        if content.startswith("!"):
+            await ctx.send("schedule cancelled")
+            return
+        if content.lower() not in ("y", "yes"):
             await ctx.send("ok, not scheduling")
             return
 

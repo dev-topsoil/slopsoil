@@ -90,6 +90,16 @@ class Voice(commands.Cog):
         if vc.is_playing():
             vc.stop()
 
+        # Explicitly disconnect any active go-live stream. The task's finally
+        # block also does this, but the task may have already finished (e.g.
+        # the video player died early) leaving the GoLiveConnection open.
+        live_conn = self.bot.live_connections.pop(guild.id, None)
+        if live_conn is not None:
+            try:
+                await live_conn.disconnect()
+            except Exception:
+                log.warning("error disconnecting go-live on stop", exc_info=True)
+
         await ctx.send("stopped")
 
     @commands.Cog.listener()
@@ -119,6 +129,12 @@ class Voice(commands.Cog):
             member.guild,
         )
         cancel_stream(self.bot, member.guild.id)
+        live_conn = self.bot.live_connections.pop(member.guild.id, None)
+        if live_conn is not None:
+            try:
+                await live_conn.disconnect()
+            except Exception:
+                log.warning("error disconnecting go-live on auto-leave", exc_info=True)
         await vc.disconnect(force=False)
 
 
