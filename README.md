@@ -42,9 +42,11 @@ Features include TVheadend integration, M3U/IPTV playlist management with live E
 
 ## Features
 
-- **YouTube & media streaming** - play any URL that yt-dlp supports (YouTube, Twitch VODs, etc.) directly into a voice channel
+- **YouTube & media streaming** - play any URL that yt-dlp supports (YouTube VODs, YouTube Live, Twitch VODs, etc.) directly into a voice channel; live streams are detected automatically and streamed without downloading
+- **MJPEG / CGI stream support** - play `.cgi` video URLs (IP cameras, legacy streaming servers) and MJPEG-over-HTTP streams directly
 - **IPTV / M3U playlist support** - add M3U sources by URL; channels are listed with live EPG now-playing info
-- **TVheadend integration** - browse and play live TV channels from a TVheadend server; search the EPG by show title and schedule playback
+- **TVheadend integration** - browse and play live TV channels from a TVheadend server; search the EPG by show title and schedule playback; showtimes are shown in the configured timezone
+- **Auto-leave on empty channel** - the bot automatically leaves and stops streaming when the last user leaves the voice channel
 - **Go-live / screenshare delivery** - streams appear as a screenshare so all members in the channel can watch
 - **H.264 hardware acceleration** - auto-detects NVIDIA NVENC, VA-API (Intel/AMD), or falls back to software encoding
 - **Discord DAVE E2EE support** - correctly handles Discord's end-to-end encryption protocol for voice channels
@@ -182,6 +184,10 @@ ALLOWED_USER_IDS=123456789012345678,987654321098765432
 TVHEADEND_URL=http://192.168.1.100:9981
 TVHEADEND_USER=admin
 TVHEADEND_PASS=yourpassword
+
+# Optional - IANA timezone for showtimes displayed by !search (e.g. America/New_York)
+# If unset, the system timezone of the machine running the bot is used.
+TIMEZONE=
 ```
 
 | Variable | Required | Description |
@@ -191,6 +197,7 @@ TVHEADEND_PASS=yourpassword
 | `TVHEADEND_URL` | No | Base URL of your TVheadend server |
 | `TVHEADEND_USER` | No | TVheadend username |
 | `TVHEADEND_PASS` | No | TVheadend password |
+| `TIMEZONE` | No | [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for `!search` showtimes (e.g. `America/Chicago`). Defaults to the system timezone. |
 
 TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, the `!channels`, `!search`, and TVheadend-backed `!play` commands are not loaded.
 
@@ -221,9 +228,9 @@ TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, 
 |---|---|---|
 | `!play <channel number>` | Friend | Play a TVheadend channel by number |
 | `!play <channel name>` | Friend | Play a channel by name (case-insensitive substring match; searches TVheadend and IPTV) |
-| `!play <URL>` | Friend | Play any URL - YouTube, direct HLS/HTTP/RTSP streams, etc. |
+| `!play <URL>` | Friend | Play any URL — YouTube VODs, YouTube Live streams, direct HLS/HTTP/RTSP streams, `.cgi` MJPEG feeds, etc. Live streams are detected automatically and streamed without downloading. |
 | `!channels` | Viewer | List all available channels with live now-playing info (paginated) |
-| `!search <show title>` | Friend | Search EPG for a show - plays immediately if airing now, or schedules for upcoming airtime |
+| `!search <show title>` | Friend | Search EPG for a show — plays immediately if airing now, or schedules for upcoming airtime. Showtimes are shown in the `TIMEZONE` configured in `.env`. |
 
 ### IPTV Source Management
 
