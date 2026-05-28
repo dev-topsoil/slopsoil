@@ -73,10 +73,36 @@ async def test_leaves_when_last_human_disconnects():
     before = _make_voice_state(channel=channel)
     after = _make_voice_state(channel=None)  # left entirely
 
+    live_conn = AsyncMock()
+    cog.bot.live_connections = {guild.id: live_conn}
+
     with patch("cogs.voice.cancel_stream") as mock_cancel:
         await cog.on_voice_state_update(member, before, after)
 
     mock_cancel.assert_called_once_with(cog.bot, guild.id)
+    live_conn.disconnect.assert_awaited_once()
+    assert guild.id not in cog.bot.live_connections
+    guild.voice_client.disconnect.assert_awaited_once_with(force=False)
+
+
+@pytest.mark.asyncio
+async def test_auto_leave_no_golive_connection():
+    """Auto-leave works cleanly when no go-live stream is active."""
+    cog = _make_cog()
+    channel = MagicMock()
+
+    bot_member = MagicMock()
+    bot_member.id = BOT_USER_ID
+    guild = _make_guild(channel, members_in_channel=[bot_member])
+    member = _make_member(guild)
+    cog.bot.live_connections = {}  # no go-live active
+
+    before = _make_voice_state(channel=channel)
+    after = _make_voice_state(channel=None)
+
+    with patch("cogs.voice.cancel_stream"):
+        await cog.on_voice_state_update(member, before, after)
+
     guild.voice_client.disconnect.assert_awaited_once_with(force=False)
 
 
