@@ -364,7 +364,7 @@ class TV(commands.Cog):
             has_audio, info.get("audio_codec") or "none",
         )
 
-        if codec not in ("h264", "hevc", "mpeg2video", "mpeg4"):
+        if codec not in ("h264", "hevc", "mpeg2video", "mpeg4", "mjpeg"):
             await send(
                 f"unsupported video codec `{codec}` in **{name}** — cannot stream"
             )
@@ -552,6 +552,17 @@ class TV(commands.Cog):
                 guild,
             )
             status = await ctx.send("checking…")
+
+            # CGI URLs are direct HTTP video feeds — probe and stream immediately.
+            parsed_path = urlparse(query).path.lower()
+            if parsed_path.endswith(".cgi"):
+                title = parsed_path.rsplit("/", 1)[-1]
+                log.info("play: CGI stream '%s' (requested by %s)", title, ctx.author)
+                self._cancel_schedule(guild.id)
+                await self._start_iptv_stream(
+                    ctx.send, guild, voice_channel, vc, title, query
+                )
+                return
 
             # Check for a live broadcast before attempting a full download.
             try:

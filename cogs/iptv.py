@@ -193,7 +193,9 @@ async def extract_hls_variant_url(master_url: str) -> str:
                 master_url, headers={"User-Agent": "slopsoil/1.0"}
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
-                text = resp.read().decode("utf-8", errors="replace")
+                # Read only enough to detect HLS markers — avoids hanging on
+                # MJPEG or other live streams whose bodies never end.
+                text = resp.read(8192).decode("utf-8", errors="replace")
         except Exception:
             return master_url
 
