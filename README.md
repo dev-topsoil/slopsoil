@@ -1,5 +1,7 @@
 ![](images/slopsoil-banner.png)  
-![](https://github.com/dev-topsoil/slopsoil/actions/workflows/tests.yml/badge.svg) ![Python](https://img.shields.io/badge/python-%3E=3.1.4-blue.svg)
+![](https://github.com/dev-topsoil/slopsoil/actions/workflows/tests.yml/badge.svg) ![Python](https://img.shields.io/badge/python-%3E=3.1.4-blue.svg)  
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/devtopsoil)
+
 # Slopsoil - Stream YouTube & IPTV to Discord Voice Channels
 
 **Slopsoil** is a Discord self-bot that streams live TV, IPTV playlists, YouTube videos, and any HTTP/HLS/RTSP stream directly into a Discord voice channel - as a screenshare that all server members can watch together.
