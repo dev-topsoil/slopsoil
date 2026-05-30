@@ -131,6 +131,20 @@ class TVheadendClient:
         self._auth = f"Basic {creds}"
         self._now_playing_cache: tuple[float, dict[str, str]] = (0.0, {})
 
+    @classmethod
+    def from_env(cls) -> TVheadendClient | None:
+        """Build a client from TVHEADEND_URL/USER/PASS, or None if any are unset.
+
+        Keeping this here means the "is TVheadend configured?" decision lives in
+        one place; the cog and bot just check for None.
+        """
+        url = os.environ.get("TVHEADEND_URL")
+        user = os.environ.get("TVHEADEND_USER")
+        password = os.environ.get("TVHEADEND_PASS")
+        if url and user and password:
+            return cls(url, user, password)
+        return None
+
     async def get_channels(self) -> list[dict]:
         def _fetch():
             endpoint = f"{self.base_url}/api/channel/grid?limit=99999"
@@ -276,10 +290,23 @@ def _fmt_time(ts: float) -> str:
 
 
 class TV(commands.Cog):
-    def __init__(self, bot: commands.Bot, tvh: TVheadendClient):
+    def __init__(self, bot: commands.Bot, tvh: TVheadendClient | None):
         self.bot = cast("SlopSoil", bot)
         self.tvh = tvh
         self._schedule_tasks: dict[int, asyncio.Task] = {}
+
+    def _tvh_active(self) -> bool:
+        """Whether TVheadend should be queried for the current request.
+
+        True only when a client is configured (credentials present) and the
+        source toggle (set via !sources enable/disable tvheadend) is on. Every
+        TVheadend-specific code path is guarded by this, so !play/!channels/
+        !search degrade to yt-dlp and IPTV when TVheadend is absent.
+        """
+        if self.tvh is None:
+            return False
+        sm = getattr(self.bot, "source_manager", None)
+        return sm.tvh_enabled if sm else True
 
     # ── Stream / schedule lifecycle ───────────────────────────────────────────
 
@@ -387,11 +414,10 @@ class TV(commands.Cog):
         log.info("fetching channel list for %s in guild '%s'", ctx.author, ctx.guild)
 
         sm = getattr(self.bot, "source_manager", None)
-        tvh_enabled = sm.tvh_enabled if sm else True
 
         lines: list[str] = []
 
-        if tvh_enabled:
+        if self._tvh_active():
             # Fetch TVheadend channel list and now-playing EPG in parallel.
             results = await asyncio.gather(
                 self.tvh.get_channels(),
@@ -400,47 +426,48 @@ class TV(commands.Cog):
             )
 
             if isinstance(results[0], BaseException):
+                # TVheadend is unreachable, but IPTV may still have channels —
+                # warn and fall through to the IPTV listing instead of bailing.
                 exc = results[0]
                 if isinstance(exc, urllib.error.URLError):
-                    log.exception(
+                    log.warning(
                         "could not reach TVheadend at %s: %s", self.tvh.base_url, exc
                     )
-                    await ctx.send(f"could not reach TVheadend: {exc}")
+                    await ctx.send(f"could not reach TVheadend (showing IPTV only): {exc}")
                 else:
-                    log.exception("unexpected error fetching channels: %s", exc)
-                    await ctx.send(f"failed to fetch channels: {exc}")
-                return
-
-            chs: list[dict] = results[0]
-
-            if isinstance(results[1], BaseException):
-                log.warning(
-                    "EPG fetch failed, showing channels without now-playing: %s",
-                    results[1],
-                )
-                now_playing: dict[str, str] = {}
+                    log.warning("unexpected error fetching channels: %s", exc)
+                    await ctx.send(f"failed to fetch TVheadend channels (showing IPTV only): {exc}")
             else:
-                now_playing = results[1]
+                chs: list[dict] = results[0]
 
-            log.info(
-                "sending channel list (%d TVH channels, %d with now-playing) to %s",
-                len(chs),
-                len(now_playing),
-                ctx.author,
-            )
+                if isinstance(results[1], BaseException):
+                    log.warning(
+                        "EPG fetch failed, showing channels without now-playing: %s",
+                        results[1],
+                    )
+                    now_playing: dict[str, str] = {}
+                else:
+                    now_playing = results[1]
 
-            for c in chs:
-                num = c.get("number")
-                name = c.get("name", "(unnamed)")
-                title = now_playing.get(c.get("uuid", ""), "")
-                if num is not None:
-                    prefix = f"{num:>4}  "
-                else:
-                    prefix = ""
-                if title:
-                    lines.append(f"{prefix}{name[:25]:<25}  ▶ {title[:35]}")
-                else:
-                    lines.append(f"{prefix}{name}")
+                log.info(
+                    "sending channel list (%d TVH channels, %d with now-playing) to %s",
+                    len(chs),
+                    len(now_playing),
+                    ctx.author,
+                )
+
+                for c in chs:
+                    num = c.get("number")
+                    name = c.get("name", "(unnamed)")
+                    title = now_playing.get(c.get("uuid", ""), "")
+                    if num is not None:
+                        prefix = f"{num:>4}  "
+                    else:
+                        prefix = ""
+                    if title:
+                        lines.append(f"{prefix}{name[:25]:<25}  ▶ {title[:35]}")
+                    else:
+                        lines.append(f"{prefix}{name}")
 
         iptv_channels = sm.get_iptv_channels() if sm else []
         if iptv_channels:
@@ -623,22 +650,19 @@ class TV(commands.Cog):
         )
 
         sm = getattr(self.bot, "source_manager", None)
-        tvh_enabled = sm.tvh_enabled if sm else True
 
         chs: list[dict] = []
-        if tvh_enabled:
+        if self._tvh_active():
+            # TVheadend errors here are non-fatal: leave chs empty and fall
+            # through to the IPTV lookup, which may still match the query.
             try:
                 chs = await self.tvh.get_channels()
             except urllib.error.URLError as exc:
-                log.exception(
+                log.warning(
                     "could not reach TVheadend at %s: %s", self.tvh.base_url, exc
                 )
-                await ctx.send(f"could not reach TVheadend: {exc}")
-                return
             except Exception as exc:
-                log.exception("unexpected error fetching channels: %s", exc)
-                await ctx.send(f"failed to fetch channels: {exc}")
-                return
+                log.warning("unexpected error fetching TVheadend channels: %s", exc)
 
             channel = _find_channel(chs, query)
             if channel:
@@ -693,20 +717,17 @@ class TV(commands.Cog):
         log.info("EPG search for %r by %s in guild '%s'", query, ctx.author, guild)
 
         sm = getattr(self.bot, "source_manager", None)
-        tvh_enabled = sm.tvh_enabled if sm else True
 
         events: list[dict] = []
-        if tvh_enabled:
+        if self._tvh_active():
+            # TVheadend EPG errors are non-fatal: leave events empty and fall
+            # through to the IPTV lookup below.
             try:
                 events = await self.tvh.get_epg_events(query)
             except urllib.error.URLError as exc:
-                log.exception("could not reach TVheadend EPG: %s", exc)
-                await ctx.send(f"could not reach TVheadend: {exc}")
-                return
+                log.warning("could not reach TVheadend EPG: %s", exc)
             except Exception as exc:
-                log.exception("unexpected error searching EPG: %s", exc)
-                await ctx.send(f"EPG search failed: {exc}")
-                return
+                log.warning("unexpected error searching TVheadend EPG: %s", exc)
 
         if not events:
             iptv_ch = _find_iptv_channel(sm.get_iptv_channels() if sm else [], query)
@@ -889,10 +910,11 @@ class TV(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    tvh = TVheadendClient(
-        url=os.environ["TVHEADEND_URL"],
-        user=os.environ["TVHEADEND_USER"],
-        password=os.environ["TVHEADEND_PASS"],
-    )
-    log.info("TVheadend client configured for %s", tvh.base_url)
+    tvh = TVheadendClient.from_env()
+    if tvh is not None:
+        log.info("TVheadend client configured for %s", tvh.base_url)
+    else:
+        log.info(
+            "TVheadend not configured — !play/!channels/!search use yt-dlp + IPTV only"
+        )
     await bot.add_cog(TV(bot, tvh))

@@ -63,20 +63,12 @@ class SlopSoil(commands.Bot):
 
         self.add_check(has_any_role)
 
-        for ext in ("cogs.general", "cogs.voice", "cogs.iptv"):
+        # cogs.tv owns !play/!channels/!search, which serve yt-dlp URLs and IPTV
+        # sources in addition to TVheadend — so it always loads. TVheadend itself
+        # is optional and configured inside the cog (see cogs.tv.setup).
+        for ext in ("cogs.general", "cogs.voice", "cogs.iptv", "cogs.tv"):
             await self.load_extension(ext)
             log.info("loaded extension: %s", ext)
-
-        tvh_vars = ("TVHEADEND_URL", "TVHEADEND_USER", "TVHEADEND_PASS")
-        if all(os.environ.get(v) for v in tvh_vars):
-            await self.load_extension("cogs.tv")
-            log.info(
-                "loaded extension: cogs.tv (TVheadend: %s)", os.environ["TVHEADEND_URL"]
-            )
-        else:
-            log.warning(
-                "TVHEADEND_URL/USER/PASS not set — !play and !channels disabled"
-            )
 
         await self.load_extension("cogs.jellyfin")
         jf_url = os.environ.get("JELLYFIN_URL")
