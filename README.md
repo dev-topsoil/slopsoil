@@ -193,6 +193,13 @@ TIMEZONE=
 # Optional - Jellyfin server (both must be set to enable Jellyfin commands)
 JELLYFIN_URL=http://192.168.1.100:8096
 JELLYFIN_API_KEY=your_api_key_here
+
+# Optional - yt-dlp format selector for downloaded !play <URL> VODs.
+# Defaults to "bestvideo+bestaudio/best". On hardware that can't decode AV1/4K
+# in real time (e.g. older GPUs), pin to H.264 <=1080p to avoid stutter and to
+# skip downloading 4K only to downscale it:
+#   YTDLP_FORMAT=bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]
+YTDLP_FORMAT=
 ```
 
 | Variable | Required | Description |
@@ -205,6 +212,7 @@ JELLYFIN_API_KEY=your_api_key_here
 | `TIMEZONE` | No | [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for `!search` showtimes (e.g. `America/Chicago`). Defaults to the system timezone. |
 | `JELLYFIN_URL` | No | Base URL of your Jellyfin server |
 | `JELLYFIN_API_KEY` | No | Jellyfin API key (generate in Dashboard → API Keys) |
+| `YTDLP_FORMAT` | No | [yt-dlp format selector](https://github.com/yt-dlp/yt-dlp#format-selection) for downloaded `!play <URL>` VODs. Defaults to `bestvideo+bestaudio/best`. Pin a codec/resolution (e.g. `bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]`) on hardware that can't decode AV1/4K in real time. |
 
 TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, the `!channels`, `!search`, and TVheadend-backed `!play` commands are not loaded.
 
