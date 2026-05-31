@@ -33,6 +33,13 @@ _H264_PT: int = 101  # payload type (matches video_compat.H264_PAYLOAD_TYPE)
 _CLOCK: int = 90_000  # 90 kHz RTP clock rate for video
 _MTU: int = 1_200  # safe MTU for Discord voice UDP
 
+# Spread each frame's RTP packets across this fraction of the frame interval
+# rather than bursting them. A large keyframe is dozens of packets; sending them
+# all at once overruns Discord's ingest, which drops the burst → every viewer
+# freezes at the same instant. Pacing (like a real WebRTC sender) keeps the
+# instantaneous rate under the limit. 0 disables; <1 leaves frame-time headroom.
+_PACKET_PACE_FRACTION: float = 0.75
+
 # H.264 NAL unit type IDs (low 5 bits of NAL header byte)
 _NAL_NON_IDR: int = 1
 _NAL_IDR: int = 5
@@ -929,6 +936,16 @@ class H264VideoPlayer(threading.Thread):
         if not all_payloads:
             return
 
+        # Pace the frame's packets across most of the frame interval instead of
+        # bursting them (see _PACKET_PACE_FRACTION). Absolute-deadline sleep so it
+        # self-corrects despite ~1ms sleep granularity; interruptible by stop.
+        n = len(all_payloads)
+        per_pkt = (
+            (_PACKET_PACE_FRACTION / self._fps) / n
+            if (self._fps > 0 and n > 1 and _PACKET_PACE_FRACTION > 0)
+            else 0.0
+        )
+        deadline = time.monotonic()
         for i, payload in enumerate(all_payloads):
             marker = i == len(all_payloads) - 1
             hdr = _rtp_header(self._seq, self._ts, self._ssrc, marker=marker)
@@ -939,6 +956,11 @@ class H264VideoPlayer(threading.Thread):
             except OSError:
                 log.debug("Video packet dropped (seq=%d)", self._seq)
             self._seq = (self._seq + 1) & 0xFFFF
+            if per_pkt:
+                deadline += per_pkt
+                slack = deadline - time.monotonic()
+                if slack > 0 and self._end.wait(timeout=slack):
+                    break  # stop requested mid-frame
 
         self._ts = (self._ts + self._ts_inc) & 0xFFFF_FFFF
 
