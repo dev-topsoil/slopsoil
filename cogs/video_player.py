@@ -41,6 +41,9 @@ _NAL_AUD: int = 9  # Access Unit Delimiter — marks frame boundaries
 # Nonce base for video — high half of 32-bit space, avoids overlap with audio
 _VIDEO_NONCE_BASE: int = 0x8000_0000
 
+# How often the player logs pacing/throughput diagnostics (seconds).
+_STATS_INTERVAL: float = 10.0
+
 # Regex matching both 3-byte (\x00\x00\x01) and 4-byte (\x00\x00\x00\x01) start codes
 _START_RE = re.compile(rb"\x00\x00\x00?\x01")
 
@@ -971,9 +974,51 @@ class H264VideoPlayer(threading.Thread):
         _t0: float | None = None
         _n = 0
 
+        # ── Diagnostics ────────────────────────────────────────────────────────
+        # Flushed to the log every _STATS_INTERVAL seconds.  The two signals that
+        # explain perceived stutter:
+        #   * "late" frames — emits that missed their pacing deadline (slack ≤ 0).
+        #     A burst of these is exactly what a viewer sees as a hitch.
+        #   * "read-block" — wall time the loop spent blocked in stdout.read().
+        #     Near-zero in steady state (FFmpeg encodes a VOD faster than realtime
+        #     so the pipe stays full); a spike means FFmpeg itself stalled
+        #     (decode/encode/GPU), pointing upstream of the pacing loop.
+        _stats_t0 = time.monotonic()
+        _stats_frames = 0
+        _stats_late = 0
+        _stats_late_total = 0.0
+        _stats_late_max = 0.0
+        _stats_read_block = 0.0
+        _stats_pkts0 = 0
+
+        def _flush_stats(now: float) -> None:
+            nonlocal _stats_t0, _stats_frames, _stats_late, _stats_late_total
+            nonlocal _stats_late_max, _stats_read_block, _stats_pkts0
+            window = now - _stats_t0
+            if window <= 0:
+                return
+            log.info(
+                "video stats: %.1f fps (target %.0f) | late %d/%d frames "
+                "(max %.0f ms, total %.0f ms) | ffmpeg read-block %.0f ms / %.1fs "
+                "| %d pkts",
+                _stats_frames / window, self._fps,
+                _stats_late, _stats_frames,
+                _stats_late_max * 1000, _stats_late_total * 1000,
+                _stats_read_block * 1000, window,
+                self._packets_sent - _stats_pkts0,
+            )
+            _stats_t0 = now
+            _stats_frames = 0
+            _stats_late = 0
+            _stats_late_total = 0.0
+            _stats_late_max = 0.0
+            _stats_read_block = 0.0
+            _stats_pkts0 = self._packets_sent
+
         def _emit(f: list[bytes]) -> bool:
             """Send a frame and pace to wall clock. Returns True → stop."""
-            nonlocal _t0, _n
+            nonlocal _t0, _n, _stats_frames, _stats_late
+            nonlocal _stats_late_total, _stats_late_max
             if not f:
                 return False
             if _t0 is None:
@@ -982,14 +1027,26 @@ class H264VideoPlayer(threading.Thread):
             if not self.first_frame_sent.is_set():
                 self.first_frame_sent.set()
             _n += 1
+            _stats_frames += 1
+            now = time.monotonic()
             due = _t0 + _n / self._fps
-            slack = due - time.monotonic()
+            slack = due - now
+            if slack <= 0:
+                lateness = -slack
+                _stats_late += 1
+                _stats_late_total += lateness
+                if lateness > _stats_late_max:
+                    _stats_late_max = lateness
+            if now - _stats_t0 >= _STATS_INTERVAL:
+                _flush_stats(now)
             if slack > 0.001:
                 return self._end.wait(timeout=slack)
             return self._end.is_set()
 
         while not self._end.is_set():
+            _read_t0 = time.monotonic()
             chunk = self._proc.stdout.read(65_536)
+            _stats_read_block += time.monotonic() - _read_t0
             if not chunk:
                 break
 
@@ -1038,6 +1095,7 @@ class H264VideoPlayer(threading.Thread):
                     nal = rewrite_sps_vui(nal)
                 frame.append(nal)
         _emit(frame)
+        _flush_stats(time.monotonic())
 
         # Reap the process; SIGKILL if it's still alive after a short grace period.
         if self._end.is_set() and self._proc.poll() is None:
