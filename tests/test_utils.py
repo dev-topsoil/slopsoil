@@ -1,11 +1,11 @@
-"""Tests for cogs/utils.py resolve_voice()."""
+"""Tests for cogs/utils.py resolve_voice() and ensure_voice()."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cogs.utils import resolve_voice
+from cogs.utils import ensure_voice, resolve_voice
 
 
 # ---------------------------------------------------------------------------
@@ -135,3 +135,80 @@ async def test_dm_author_found_in_second_guild():
     guild, channel, voice_client = await resolve_voice(ctx)
     assert guild is guild2
     assert channel is voice_state.channel
+
+
+# ---------------------------------------------------------------------------
+# ensure_voice
+# ---------------------------------------------------------------------------
+
+
+def _make_vc(channel, *, connected: bool = True) -> MagicMock:
+    vc = MagicMock()
+    vc.channel = channel
+    vc.is_connected.return_value = connected
+    vc.move_to = AsyncMock()
+    vc.disconnect = AsyncMock()
+    return vc
+
+
+def _make_channel() -> tuple[MagicMock, MagicMock]:
+    """Return (channel, the_vc_its_connect_yields)."""
+    channel = MagicMock()
+    fresh_vc = _make_vc(channel)
+    channel.connect = AsyncMock(return_value=fresh_vc)
+    return channel, fresh_vc
+
+
+@pytest.mark.asyncio
+async def test_ensure_voice_connects_when_no_client():
+    channel, fresh_vc = _make_channel()
+    result = await ensure_voice(channel, None)
+    assert result is fresh_vc
+    channel.connect.assert_awaited_once_with(self_deaf=True)
+
+
+@pytest.mark.asyncio
+async def test_ensure_voice_stays_when_already_in_channel():
+    channel, _ = _make_channel()
+    vc = _make_vc(channel, connected=True)
+    result = await ensure_voice(channel, vc)
+    assert result is vc
+    vc.move_to.assert_not_awaited()
+    vc.disconnect.assert_not_awaited()
+    channel.connect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ensure_voice_moves_when_connected_elsewhere():
+    channel, _ = _make_channel()
+    other = MagicMock()
+    vc = _make_vc(other, connected=True)
+    result = await ensure_voice(channel, vc)
+    assert result is vc
+    vc.move_to.assert_awaited_once_with(channel)
+    channel.connect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ensure_voice_reconnects_stale_client_same_channel():
+    """A stale (disconnected) client in the same channel must NOT be trusted —
+    this is the bug: the bot 'plays' without actually being connected."""
+    channel, fresh_vc = _make_channel()
+    stale = _make_vc(channel, connected=False)
+    result = await ensure_voice(channel, stale)
+    assert result is fresh_vc
+    stale.disconnect.assert_awaited_once_with(force=True)
+    stale.move_to.assert_not_awaited()
+    channel.connect.assert_awaited_once_with(self_deaf=True)
+
+
+@pytest.mark.asyncio
+async def test_ensure_voice_reconnects_stale_client_other_channel():
+    channel, fresh_vc = _make_channel()
+    other = MagicMock()
+    stale = _make_vc(other, connected=False)
+    result = await ensure_voice(channel, stale)
+    assert result is fresh_vc
+    stale.disconnect.assert_awaited_once_with(force=True)
+    stale.move_to.assert_not_awaited()  # never move a dead client
+    channel.connect.assert_awaited_once_with(self_deaf=True)
