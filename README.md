@@ -200,6 +200,20 @@ JELLYFIN_API_KEY=your_api_key_here
 # skip downloading 4K only to downscale it:
 #   YTDLP_FORMAT=bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]
 YTDLP_FORMAT=
+
+# Optional - output stream quality preset. Match it to your Discord account tier:
+# FREE accounts are capped at 720p30; streaming above the tier gets throttled
+# server-side (stutter/freeze). One of: 720p (free), 1080p (Nitro, default),
+# 4k (Nitro + boosts). Each preset sets a sensible resolution/fps/bitrate.
+STREAM_QUALITY=720p
+
+# Optional - fine-grained overrides for the preset above (set only to deviate).
+#   STREAM_RESOLUTION=1280:720   # W:H (or WxH)
+#   STREAM_FPS=30                # 1-60
+#   STREAM_VIDEO_BITRATE=2500k   # -b:v/-maxrate/-bufsize (CBR)
+STREAM_RESOLUTION=
+STREAM_FPS=
+STREAM_VIDEO_BITRATE=
 ```
 
 | Variable | Required | Description |
@@ -213,6 +227,10 @@ YTDLP_FORMAT=
 | `JELLYFIN_URL` | No | Base URL of your Jellyfin server |
 | `JELLYFIN_API_KEY` | No | Jellyfin API key (generate in Dashboard → API Keys) |
 | `YTDLP_FORMAT` | No | [yt-dlp format selector](https://github.com/yt-dlp/yt-dlp#format-selection) for downloaded `!play <URL>` VODs. Defaults to `bestvideo+bestaudio/best`. Pin a codec/resolution (e.g. `bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]`) on hardware that can't decode AV1/4K in real time. |
+| `STREAM_QUALITY` | No | Output quality preset, matched to a Discord tier: `720p` (free — Discord's cap), `1080p` (Nitro, **default**), `4k` (Nitro + boosts). Sets resolution/fps/bitrate together (720p→1280×720/30/2500k, 1080p→1920×1080/60/6000k, 4k→3840×2160/60/12000k). Streaming above your account tier is throttled server-side and stutters, so free accounts should set `720p`. |
+| `STREAM_RESOLUTION` | No | Override the preset resolution as `W:H` (or `WxH`), e.g. `1280:720`. |
+| `STREAM_FPS` | No | Override the preset frame rate, 1–60. Matching the source fps avoids wasteful frame duplication. |
+| `STREAM_VIDEO_BITRATE` | No | Override the preset video bitrate (used for `-b:v`/`-maxrate`/`-bufsize`, CBR), e.g. `2500k`. |
 
 TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, the `!channels`, `!search`, and TVheadend-backed `!play` commands are not loaded.
 

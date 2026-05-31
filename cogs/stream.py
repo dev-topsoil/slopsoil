@@ -24,7 +24,7 @@ import discord
 
 from cogs.golive import GoLiveAudioSender, GoLiveConnection, _GoLiveVCProxy
 from cogs.video_player import _ENCODER as _VIDEO_ENCODER
-from cogs.video_player import H264VideoPlayer, _AudioPipeSource
+from cogs.video_player import H264VideoPlayer, _AudioPipeSource, _stream_fps
 
 if TYPE_CHECKING:
     from bot import SlopSoil
@@ -121,7 +121,7 @@ async def start_stream(
     video_player: H264VideoPlayer | None = None
     if _VIDEO_ENCODER is not None:
         video_player = H264VideoPlayer(
-            url=url, voice_client=vc, fps=60.0,
+            url=url, voice_client=vc, fps=_stream_fps(),
             live=live, audio=audio, probe_size=probe_size,
         )
         bot.video_players[guild.id] = video_player
@@ -251,7 +251,7 @@ async def start_live_stream(
     # ── Video (H264VideoPlayer via go-live connection) ────────────────────────
     proxy_vc = _GoLiveVCProxy(conn)
     video_player = H264VideoPlayer(
-        url=url, voice_client=proxy_vc, fps=60.0,  # type: ignore[arg-type]
+        url=url, voice_client=proxy_vc, fps=_stream_fps(),  # type: ignore[arg-type]
         live=live, audio=audio, probe_size=probe_size,
     )
     bot.video_players[guild.id] = video_player

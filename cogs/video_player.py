@@ -357,6 +357,66 @@ def rewrite_sps_vui(nal: bytes) -> bytes:
 # ── Encoder detection ─────────────────────────────────────────────────────────
 
 
+# ── Stream profile (env-tunable; defaults match historical behavior) ──────────
+# Discord caps FREE accounts at 720p30; Nitro unlocks up to 4K60. Streaming
+# above the account's tier gets throttled server-side (stutter/freeze). Pick a
+# tier with STREAM_QUALITY; override any single axis with the vars below.
+
+# STREAM_QUALITY presets → (resolution, fps, video bitrate), tuned per Discord tier.
+_STREAM_PRESETS: dict[str, tuple[str, float, str]] = {
+    "720p": ("1280:720", 30.0, "2500k"),    # free accounts (Discord's cap)
+    "1080p": ("1920:1080", 60.0, "6000k"),  # Nitro
+    "4k": ("3840:2160", 60.0, "12000k"),    # Nitro + server boosts
+}
+_DEFAULT_QUALITY = "1080p"
+
+
+def _stream_preset() -> tuple[str, float, str]:
+    """(resolution, fps, bitrate) selected by STREAM_QUALITY (720p/1080p/4k);
+    defaults to 1080p — the historical hardcoded profile."""
+    raw = os.environ.get("STREAM_QUALITY", "").strip().lower()
+    if raw:
+        if raw in _STREAM_PRESETS:
+            return _STREAM_PRESETS[raw]
+        log.warning(
+            "STREAM_QUALITY=%r unknown (want %s); using %s",
+            raw, "/".join(_STREAM_PRESETS), _DEFAULT_QUALITY,
+        )
+    return _STREAM_PRESETS[_DEFAULT_QUALITY]
+
+
+def _stream_resolution() -> str:
+    """Output size as 'W:H' for the scaler. STREAM_RESOLUTION (accepts
+    '1280:720' or '1280x720') overrides the STREAM_QUALITY preset."""
+    raw = os.environ.get("STREAM_RESOLUTION", "").strip().replace("x", ":")
+    if raw:
+        if re.fullmatch(r"\d{2,5}:\d{2,5}", raw):
+            return raw
+        log.warning("STREAM_RESOLUTION=%r invalid (want W:H); using preset", raw)
+    return _stream_preset()[0]
+
+
+def _stream_bitrate() -> str:
+    """Target video bitrate for -b:v/-maxrate/-bufsize (e.g. '2500k').
+    STREAM_VIDEO_BITRATE overrides the STREAM_QUALITY preset."""
+    return os.environ.get("STREAM_VIDEO_BITRATE", "").strip() or _stream_preset()[2]
+
+
+def _stream_fps() -> float:
+    """Output frame rate. STREAM_FPS (1-60) overrides the STREAM_QUALITY preset.
+    Matching the source fps avoids wasteful frame duplication."""
+    raw = os.environ.get("STREAM_FPS", "").strip()
+    if raw:
+        try:
+            v = float(raw)
+            if 1.0 <= v <= 60.0:
+                return v
+            log.warning("STREAM_FPS=%s out of range 1-60; using preset", raw)
+        except ValueError:
+            log.warning("STREAM_FPS=%r not a number; using preset", raw)
+    return _stream_preset()[1]
+
+
 @dataclasses.dataclass
 class _EncoderConfig:
     name: str
@@ -410,6 +470,8 @@ def _detect_encoder() -> _EncoderConfig | None:
     available = result.stdout
 
     vaapi_pre = ["-vaapi_device", "/dev/dri/renderD128"]
+    res = _stream_resolution()
+    br = _stream_bitrate()
 
     if "libx264" in available and _test_encoder("libx264", []):
         log.info("video encoder: libx264 (software)")
@@ -428,13 +490,13 @@ def _detect_encoder() -> _EncoderConfig | None:
                 "-x264-params",
                 "aud=1",
                 "-b:v",
-                "6000k",
+                br,
                 "-maxrate",
-                "6000k",
+                br,
                 "-bufsize",
-                "12000k",
+                br,
             ],
-            vf="scale=1920:1080",
+            vf=f"scale={res}",
         )
 
     if "h264_nvenc" in available and _test_encoder("h264_nvenc", []):
@@ -453,14 +515,16 @@ def _detect_encoder() -> _EncoderConfig | None:
                 "4.2",
                 "-aud",
                 "1",
+                "-rc",
+                "cbr",
                 "-b:v",
-                "6000k",
+                br,
                 "-maxrate",
-                "6000k",
+                br,
                 "-bufsize",
-                "12000k",
+                br,
             ],
-            vf="scale=1920:1080",
+            vf=f"scale={res}",
         )
 
     if "h264_vaapi" in available and _test_encoder("h264_vaapi", vaapi_pre):
@@ -478,9 +542,9 @@ def _detect_encoder() -> _EncoderConfig | None:
                 "-aud",
                 "1",
                 "-b:v",
-                "6000k",
+                br,
             ],
-            vf="format=nv12,hwupload,scale_vaapi=1920:1080",
+            vf=f"format=nv12,hwupload,scale_vaapi={res}",
         )
 
     if "libopenh264" in available and _test_encoder("libopenh264", []):
@@ -494,13 +558,13 @@ def _detect_encoder() -> _EncoderConfig | None:
                 "-level:v",
                 "4.2",
                 "-b:v",
-                "6000k",
+                br,
                 "-maxrate",
-                "6000k",
+                br,
                 "-bufsize",
-                "12000k",
+                br,
             ],
-            vf="scale=1920:1080",
+            vf=f"scale={res}",
         )
 
     log.warning(
