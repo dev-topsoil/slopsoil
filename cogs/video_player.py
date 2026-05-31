@@ -365,31 +365,38 @@ class _EncoderConfig:
     vf: str  # -vf value
 
 
-def _test_encoder(name: str, pre_input: list[str]) -> bool:
-    """Return True if FFmpeg can actually use this encoder (device/driver check)."""
+def _test_encoder(name: str, pre_input: list[str], vf: str = "") -> bool:
+    """Return True if FFmpeg can actually use this encoder (device/driver check).
+
+    Mirrors the real encode pipeline: hardware encoders (notably VA-API) require
+    frames on a hardware surface, so the same -vf chain used for real output
+    (e.g. ``format=nv12,hwupload,…``) must be applied here too — otherwise the
+    probe can false-negative even when real encoding would succeed.  On failure
+    the FFmpeg stderr is logged at DEBUG so the reason (missing driver, no
+    device, etc.) is recoverable without guesswork.
+    """
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        *pre_input,
+        "-f", "lavfi",
+        "-i", "nullsrc=size=64x64:rate=1",
+        "-vframes", "1",
+    ]
+    if vf:
+        cmd += ["-vf", vf]
+    cmd += ["-c:v", name, "-f", "null", "-"]
     try:
-        r = subprocess.run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                *pre_input,
-                "-f",
-                "lavfi",
-                "-i",
-                "nullsrc=size=64x64:rate=1",
-                "-vframes",
-                "1",
-                "-c:v",
-                name,
-                "-f",
-                "null",
-                "-",
-            ],
-            capture_output=True,
-            timeout=10,
-        )
+        r = subprocess.run(cmd, capture_output=True, timeout=10)
+        if r.returncode != 0:
+            tail = r.stderr.decode(errors="replace").strip().splitlines()[-3:]
+            log.debug(
+                "encoder %s probe failed (exit %d): %s",
+                name, r.returncode, " | ".join(tail),
+            )
         return r.returncode == 0
-    except Exception:
+    except Exception as exc:
+        log.debug("encoder %s probe error: %s", name, exc)
         return False
 
 
@@ -410,6 +417,7 @@ def _detect_encoder() -> _EncoderConfig | None:
     available = result.stdout
 
     vaapi_pre = ["-vaapi_device", "/dev/dri/renderD128"]
+    vaapi_vf = "format=nv12,hwupload,scale_vaapi=1920:1080"
 
     if "libx264" in available and _test_encoder("libx264", []):
         log.info("video encoder: libx264 (software)")
@@ -437,50 +445,62 @@ def _detect_encoder() -> _EncoderConfig | None:
             vf="scale=1920:1080",
         )
 
-    if "h264_nvenc" in available and _test_encoder("h264_nvenc", []):
-        log.info("video encoder: h264_nvenc (NVIDIA)")
-        return _EncoderConfig(
-            name="h264_nvenc",
-            pre_input=[],
-            post_codec=[
-                "-preset",
-                "p1",
-                "-tune",
-                "ll",
-                "-profile:v",
-                "high",
-                "-level:v",
-                "4.2",
-                "-aud",
-                "1",
-                "-b:v",
-                "6000k",
-                "-maxrate",
-                "6000k",
-                "-bufsize",
-                "12000k",
-            ],
-            vf="scale=1920:1080",
+    if "h264_nvenc" in available:
+        if _test_encoder("h264_nvenc", []):
+            log.info("video encoder: h264_nvenc (NVIDIA)")
+            return _EncoderConfig(
+                name="h264_nvenc",
+                pre_input=[],
+                post_codec=[
+                    "-preset",
+                    "p1",
+                    "-tune",
+                    "ll",
+                    "-profile:v",
+                    "high",
+                    "-level:v",
+                    "4.2",
+                    "-aud",
+                    "1",
+                    "-b:v",
+                    "6000k",
+                    "-maxrate",
+                    "6000k",
+                    "-bufsize",
+                    "12000k",
+                ],
+                vf="scale=1920:1080",
+            )
+        log.info(
+            "h264_nvenc is compiled in but unavailable (no usable NVIDIA GPU/driver) "
+            "— skipping"
         )
 
-    if "h264_vaapi" in available and _test_encoder("h264_vaapi", vaapi_pre):
-        log.info("video encoder: h264_vaapi (VA-API)")
-        return _EncoderConfig(
-            name="h264_vaapi",
-            pre_input=vaapi_pre,
-            post_codec=[
-                "-rc_mode",
-                "CBR",
-                "-profile:v",
-                "high",
-                "-level",
-                "42",
-                "-aud",
-                "1",
-                "-b:v",
-                "6000k",
-            ],
-            vf="format=nv12,hwupload,scale_vaapi=1920:1080",
+    if "h264_vaapi" in available:
+        if _test_encoder("h264_vaapi", vaapi_pre, vaapi_vf):
+            log.info("video encoder: h264_vaapi (VA-API)")
+            return _EncoderConfig(
+                name="h264_vaapi",
+                pre_input=vaapi_pre,
+                post_codec=[
+                    "-rc_mode",
+                    "CBR",
+                    "-profile:v",
+                    "high",
+                    "-level",
+                    "42",
+                    "-aud",
+                    "1",
+                    "-b:v",
+                    "6000k",
+                ],
+                vf=vaapi_vf,
+            )
+        log.warning(
+            "h264_vaapi is compiled in but the VA-API probe failed — falling back to "
+            "software. Likely a missing GPU driver (AMD needs mesa-va-drivers-freeworld) "
+            "or no /dev/dri access. Run `vainfo` in the container to diagnose; enable "
+            "DEBUG logging to see the FFmpeg error."
         )
 
     if "libopenh264" in available and _test_encoder("libopenh264", []):
