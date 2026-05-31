@@ -816,12 +816,17 @@ class H264VideoPlayer(threading.Thread):
             "-analyzeduration", str(self._probe_size),
         ]
         pre_input = enc.pre_input
-        rate_args: list[str] = []
+        is_url = self._url.startswith(("http://", "https://", "rtmp://", "rtsp://"))
+        # Pace a local VOD file at native rate so FFmpeg emits audio+video in
+        # lockstep at real time instead of racing ahead and bursting — tighter
+        # A/V sync and smoother delivery. Live inputs / URLs are already
+        # real-time, so -re would only stall them.
+        rate_args: list[str] = [] if (self._live or is_url) else ["-re"]
         fflags = "+discardcorrupt"
         # -reconnect flags are HTTP-only; FFmpeg rejects them for local files.
         reconnect_args = (
             ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
-            if self._url.startswith(("http://", "https://", "rtmp://", "rtsp://"))
+            if is_url
             else []
         )
         video_out_args = [
