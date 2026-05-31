@@ -33,12 +33,12 @@ _H264_PT: int = 101  # payload type (matches video_compat.H264_PAYLOAD_TYPE)
 _CLOCK: int = 90_000  # 90 kHz RTP clock rate for video
 _MTU: int = 1_200  # safe MTU for Discord voice UDP
 
-# Spread each frame's RTP packets across this fraction of the frame interval
-# rather than bursting them. A large keyframe is dozens of packets; sending them
-# all at once overruns Discord's ingest, which drops the burst → every viewer
-# freezes at the same instant. Pacing (like a real WebRTC sender) keeps the
-# instantaneous rate under the limit. 0 disables; <1 leaves frame-time headroom.
-_PACKET_PACE_FRACTION: float = 0.75
+# Optionally spread each frame's RTP packets across a fraction of the frame
+# interval instead of bursting them. A large keyframe is dozens of packets;
+# bursting them can overrun a receiver's ingest, which drops the burst → a
+# freeze. Pacing (like a real WebRTC sender) keeps the instantaneous rate down.
+# Opt-in via STREAM_PACKET_PACE (default 0.0 = off); see _packet_pace_fraction.
+_DEFAULT_PACKET_PACE: float = 0.0
 
 # H.264 NAL unit type IDs (low 5 bits of NAL header byte)
 _NAL_NON_IDR: int = 1
@@ -365,17 +365,32 @@ def rewrite_sps_vui(nal: bytes) -> bytes:
 
 
 # ── Stream profile (env-tunable; defaults match historical behavior) ──────────
-# Discord caps FREE accounts at 720p30; Nitro unlocks up to 4K60. Streaming
-# above the account's tier gets throttled server-side (stutter/freeze). Pick a
-# tier with STREAM_QUALITY; override any single axis with the vars below.
+# Select output resolution/fps/bitrate as a single STREAM_QUALITY tier, or
+# override any one axis with the vars below. Discord enforces per-account
+# resolution/fps caps (e.g. 720p30 up to 4K60 by tier), so pick a tier your
+# account actually supports.
 
-# STREAM_QUALITY presets → (resolution, fps, video bitrate), tuned per Discord tier.
+# STREAM_QUALITY presets → (resolution, fps, video bitrate).
 _STREAM_PRESETS: dict[str, tuple[str, float, str]] = {
-    "720p": ("1280:720", 30.0, "2500k"),    # free accounts (Discord's cap)
-    "1080p": ("1920:1080", 60.0, "6000k"),  # Nitro
-    "4k": ("3840:2160", 60.0, "12000k"),    # Nitro + server boosts
+    "720p": ("1280:720", 30.0, "2500k"),
+    "1080p": ("1920:1080", 60.0, "6000k"),
+    "4k": ("3840:2160", 60.0, "12000k"),
 }
 _DEFAULT_QUALITY = "1080p"
+
+
+def _packet_pace_fraction() -> float:
+    """Fraction of the frame interval to spread each frame's RTP packets across,
+    instead of bursting them (see _DEFAULT_PACKET_PACE). STREAM_PACKET_PACE,
+    default 0.0 (disabled). Clamped to 0.0-0.95 so pacing never bleeds into the
+    next frame; e.g. 0.75 spreads packets over 75% of the frame interval."""
+    raw = os.environ.get("STREAM_PACKET_PACE", "").strip()
+    if raw:
+        try:
+            return max(0.0, min(0.95, float(raw)))
+        except ValueError:
+            log.warning("STREAM_PACKET_PACE=%r not a number; pacing disabled", raw)
+    return _DEFAULT_PACKET_PACE
 
 
 def _stream_preset() -> tuple[str, float, str]:
@@ -936,13 +951,15 @@ class H264VideoPlayer(threading.Thread):
         if not all_payloads:
             return
 
-        # Pace the frame's packets across most of the frame interval instead of
-        # bursting them (see _PACKET_PACE_FRACTION). Absolute-deadline sleep so it
-        # self-corrects despite ~1ms sleep granularity; interruptible by stop.
+        # Optionally pace the frame's packets across part of the frame interval
+        # instead of bursting them (STREAM_PACKET_PACE; off by default). Absolute-
+        # deadline sleep so it self-corrects despite ~1ms sleep granularity;
+        # interruptible by stop.
+        pace = _packet_pace_fraction()
         n = len(all_payloads)
         per_pkt = (
-            (_PACKET_PACE_FRACTION / self._fps) / n
-            if (self._fps > 0 and n > 1 and _PACKET_PACE_FRACTION > 0)
+            (pace / self._fps) / n
+            if (self._fps > 0 and n > 1 and pace > 0)
             else 0.0
         )
         deadline = time.monotonic()

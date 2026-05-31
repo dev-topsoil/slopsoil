@@ -201,11 +201,10 @@ JELLYFIN_API_KEY=your_api_key_here
 #   YTDLP_FORMAT=bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]
 YTDLP_FORMAT=
 
-# Optional - output stream quality preset. Match it to your Discord account tier:
-# FREE accounts are capped at 720p30; streaming above the tier gets throttled
-# server-side (stutter/freeze). One of: 720p (free), 1080p (Nitro, default),
-# 4k (Nitro + boosts). Each preset sets a sensible resolution/fps/bitrate.
-STREAM_QUALITY=720p
+# Optional - output stream quality preset (resolution/fps/bitrate together).
+# One of: 720p, 1080p (default), 4k. Discord enforces per-account resolution/fps
+# caps (e.g. 720p30 up to 4K60 by tier), so pick one your account supports.
+STREAM_QUALITY=
 
 # Optional - fine-grained overrides for the preset above (set only to deviate).
 #   STREAM_RESOLUTION=1280:720   # W:H (or WxH)
@@ -214,6 +213,11 @@ STREAM_QUALITY=720p
 STREAM_RESOLUTION=
 STREAM_FPS=
 STREAM_VIDEO_BITRATE=
+
+# Optional - pace each frame's RTP packets across this fraction of the frame
+# interval instead of bursting them (0.0 = off/default; e.g. 0.75). Can reduce
+# freezes from dropped packet bursts on some networks. Clamped to 0.0-0.95.
+STREAM_PACKET_PACE=
 ```
 
 | Variable | Required | Description |
@@ -227,10 +231,11 @@ STREAM_VIDEO_BITRATE=
 | `JELLYFIN_URL` | No | Base URL of your Jellyfin server |
 | `JELLYFIN_API_KEY` | No | Jellyfin API key (generate in Dashboard → API Keys) |
 | `YTDLP_FORMAT` | No | [yt-dlp format selector](https://github.com/yt-dlp/yt-dlp#format-selection) for downloaded `!play <URL>` VODs. Defaults to `bestvideo+bestaudio/best`. Pin a codec/resolution (e.g. `bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]`) on hardware that can't decode AV1/4K in real time. |
-| `STREAM_QUALITY` | No | Output quality preset, matched to a Discord tier: `720p` (free — Discord's cap), `1080p` (Nitro, **default**), `4k` (Nitro + boosts). Sets resolution/fps/bitrate together (720p→1280×720/30/2500k, 1080p→1920×1080/60/6000k, 4k→3840×2160/60/12000k). Streaming above your account tier is throttled server-side and stutters, so free accounts should set `720p`. |
+| `STREAM_QUALITY` | No | Output quality preset (default `1080p`): `720p`→1280×720/30/2500k, `1080p`→1920×1080/60/6000k, `4k`→3840×2160/60/12000k (resolution/fps/bitrate set together). Discord enforces per-account resolution/fps caps, so pick a tier your account supports. |
 | `STREAM_RESOLUTION` | No | Override the preset resolution as `W:H` (or `WxH`), e.g. `1280:720`. |
 | `STREAM_FPS` | No | Override the preset frame rate, 1–60. Matching the source fps avoids wasteful frame duplication. |
 | `STREAM_VIDEO_BITRATE` | No | Override the preset video bitrate (used for `-b:v`/`-maxrate`/`-bufsize`, CBR), e.g. `2500k`. |
+| `STREAM_PACKET_PACE` | No | Spread each frame's RTP packets across this fraction of the frame interval instead of bursting them (default `0.0` = off; e.g. `0.75`). Can reduce freezes caused by dropped packet bursts on some networks. Clamped to 0.0–0.95. |
 | `STREAM_AV_SYNC_MS` | No | Lip-sync correction in ms (default `0`). Audio and video send on independent threads, so a constant offset can appear. **Positive** advances audio (fixes "audio behind"); **negative** delays audio (fixes "audio ahead"). Dial in by testing; clamped to ±5000. |
 
 TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, the `!channels`, `!search`, and TVheadend-backed `!play` commands are not loaded.

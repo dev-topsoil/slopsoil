@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from cogs.video_player import (
+    _packet_pace_fraction,
     _stream_bitrate,
     _stream_fps,
     _stream_preset,
@@ -23,6 +24,7 @@ def _clear_profile_env(monkeypatch):
         "STREAM_RESOLUTION",
         "STREAM_FPS",
         "STREAM_VIDEO_BITRATE",
+        "STREAM_PACKET_PACE",
     ):
         monkeypatch.delenv(var, raising=False)
 
@@ -134,3 +136,32 @@ def test_fps_out_of_range_falls_back_to_preset(monkeypatch):
 def test_fps_non_numeric_falls_back_to_preset(monkeypatch):
     monkeypatch.setenv("STREAM_FPS", "fast")
     assert _stream_fps() == 60.0
+
+
+# ---------------------------------------------------------------------------
+# _packet_pace_fraction (STREAM_PACKET_PACE)
+# ---------------------------------------------------------------------------
+
+
+def test_pace_default_is_disabled():
+    assert _packet_pace_fraction() == 0.0
+
+
+def test_pace_override(monkeypatch):
+    monkeypatch.setenv("STREAM_PACKET_PACE", "0.75")
+    assert _packet_pace_fraction() == 0.75
+
+
+def test_pace_clamps_to_max(monkeypatch):
+    monkeypatch.setenv("STREAM_PACKET_PACE", "2")
+    assert _packet_pace_fraction() == 0.95
+
+
+def test_pace_clamps_negative_to_zero(monkeypatch):
+    monkeypatch.setenv("STREAM_PACKET_PACE", "-1")
+    assert _packet_pace_fraction() == 0.0
+
+
+def test_pace_non_numeric_falls_back_to_disabled(monkeypatch):
+    monkeypatch.setenv("STREAM_PACKET_PACE", "smooth")
+    assert _packet_pace_fraction() == 0.0
