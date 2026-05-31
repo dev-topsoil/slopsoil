@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from cogs.tv import _fmt_time, _get_display_tz
+from cogs.tv import _DEFAULT_YT_FORMAT, _fmt_time, _get_display_tz, _yt_format
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +49,37 @@ def test_get_display_tz_whitespace_only_falls_back(monkeypatch):
     monkeypatch.setenv("TIMEZONE", "   ")
     tz = _get_display_tz()
     assert tz is not None
+
+
+# ---------------------------------------------------------------------------
+# _yt_format
+# ---------------------------------------------------------------------------
+
+
+def test_yt_format_unset_uses_default(monkeypatch):
+    monkeypatch.delenv("YTDLP_FORMAT", raising=False)
+    assert _yt_format() == _DEFAULT_YT_FORMAT
+
+
+def test_yt_format_empty_string_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("YTDLP_FORMAT", "")
+    assert _yt_format() == _DEFAULT_YT_FORMAT
+
+
+def test_yt_format_whitespace_only_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("YTDLP_FORMAT", "   ")
+    assert _yt_format() == _DEFAULT_YT_FORMAT
+
+
+def test_yt_format_custom_override(monkeypatch):
+    fmt = "bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]"
+    monkeypatch.setenv("YTDLP_FORMAT", fmt)
+    assert _yt_format() == fmt
+
+
+def test_yt_format_strips_surrounding_whitespace(monkeypatch):
+    monkeypatch.setenv("YTDLP_FORMAT", "  best  ")
+    assert _yt_format() == "best"
 
 
 # ---------------------------------------------------------------------------

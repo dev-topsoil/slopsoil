@@ -30,6 +30,21 @@ from permissions import Role, require_role
 # {source_name: (fetched_at, {tvg_id: title})} — refreshed every 15 minutes
 _epg_cache: dict[str, tuple[float, dict[str, str]]] = {}
 
+# Default yt-dlp format selector for downloaded VODs — best available v+a.
+_DEFAULT_YT_FORMAT = "bestvideo+bestaudio/best"
+
+
+def _yt_format() -> str:
+    """yt-dlp format selector used to download `!play <URL>` VODs.
+
+    Defaults to `_DEFAULT_YT_FORMAT` (best available video+audio).  Override via
+    the ``YTDLP_FORMAT`` env var to pin a codec/resolution — useful on hardware
+    that can't decode AV1/4K in real time, or to avoid downloading 4K only to
+    downscale it (e.g. ``bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]``).
+    An unset or blank value falls back to the default.
+    """
+    return os.environ.get("YTDLP_FORMAT", "").strip() or _DEFAULT_YT_FORMAT
+
 
 async def _yt_download(url: str, out_dir: str) -> tuple[str, str]:
     """Download url into out_dir via yt-dlp. Returns (file_path, title)."""
@@ -37,7 +52,7 @@ async def _yt_download(url: str, out_dir: str) -> tuple[str, str]:
 
     def _run() -> tuple[str, str]:
         opts = {
-            "format": "bestvideo+bestaudio/best",
+            "format": _yt_format(),
             "outtmpl": os.path.join(out_dir, "%(id)s.%(ext)s"),
             "merge_output_format": "mp4",
             "quiet": True,
