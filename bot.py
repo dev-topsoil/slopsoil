@@ -52,6 +52,7 @@ class SlopSoil(commands.Bot):
         self.stream_tasks: dict[int, asyncio.Task] = {}
         self.video_players: dict[int, H264VideoPlayer] = {}
         self.live_connections: dict[int, GoLiveConnection] = {}
+        self.idle_leave_tasks: dict[int, asyncio.Task] = {}
         self.source_manager: SourceManager | None = None
 
     async def setup_hook(self):
@@ -79,7 +80,7 @@ class SlopSoil(commands.Bot):
     async def close(self) -> None:
         # Cancel active stream tasks and terminate FFmpeg processes before the
         # event loop shuts down, so a single Ctrl+C exits cleanly.
-        tasks = list(self.stream_tasks.values())
+        tasks = list(self.stream_tasks.values()) + list(self.idle_leave_tasks.values())
         for task in tasks:
             if not task.done():
                 task.cancel()
