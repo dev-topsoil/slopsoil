@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 
 from cogs.utils import resolve_voice
-from streaming.engine import cancel_stream
+from streaming.engine import cancel_idle_leave, cancel_stream
 from permissions import Role, require_role
 
 if TYPE_CHECKING:
@@ -67,6 +67,7 @@ class Voice(commands.Cog):
 
         log.info("disconnecting from voice in guild '%s'", guild)
         cancel_stream(self.bot, guild.id)
+        cancel_idle_leave(self.bot, guild.id)
         await vc.disconnect(force=False)
         await ctx.send("left!")
 
@@ -129,6 +130,7 @@ class Voice(commands.Cog):
             member.guild,
         )
         cancel_stream(self.bot, member.guild.id)
+        cancel_idle_leave(self.bot, member.guild.id)
         live_conn = self.bot.live_connections.pop(member.guild.id, None)
         if live_conn is not None:
             try:

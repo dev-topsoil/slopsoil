@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cogs.stream import (
+from streaming.engine import (
     _format_idle,
     _idle_leave_now,
     _idle_leave_timeout,
@@ -136,3 +136,56 @@ async def test_idle_leave_now_disconnects_when_idle(fake_bot):
     await _idle_leave_now(fake_bot, guild, send, 300)
     vc.disconnect.assert_awaited_once()
     send.assert_called_once()
+
+
+# --- voice.py cancellation wiring ----------------------------------------
+
+from cogs.voice import Voice  # noqa: E402
+
+
+async def test_leave_cancels_idle_timer(fake_bot, monkeypatch):
+    guild, vc = _make_guild(guild_id=99)
+    monkeypatch.setattr("cogs.voice.cancel_stream", lambda *a: None)
+    called = {}
+    monkeypatch.setattr(
+        "cogs.voice.cancel_idle_leave",
+        lambda bot, gid: called.__setitem__("gid", gid),
+    )
+
+    cog = Voice(fake_bot)
+    ctx = MagicMock()
+    ctx.guild = guild
+    ctx.send = AsyncMock()
+    await Voice.leave.callback(cog, ctx)
+
+    assert called["gid"] == 99
+
+
+async def test_auto_leave_cancels_idle_timer(fake_bot, monkeypatch):
+    monkeypatch.setattr("cogs.voice.cancel_stream", lambda *a: None)
+    called = {}
+    monkeypatch.setattr(
+        "cogs.voice.cancel_idle_leave",
+        lambda bot, gid: called.__setitem__("gid", gid),
+    )
+    bot_user = MagicMock()
+    bot_user.id = 1000
+    fake_bot.user = bot_user
+
+    cog = Voice(fake_bot)
+
+    vc = MagicMock()
+    vc.disconnect = AsyncMock()
+    vc.channel.members = [bot_user]  # only the bot remains
+    before = MagicMock()
+    before.channel = vc.channel
+    after = MagicMock()
+    after.channel = None
+    member = MagicMock()
+    member.guild.id = 5
+    member.guild.voice_client = vc
+
+    # Invoked the same way the existing suite calls the listener (see test_voice.py).
+    await cog.on_voice_state_update(member, before, after)
+
+    assert called["gid"] == 5
