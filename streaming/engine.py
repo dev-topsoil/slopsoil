@@ -258,6 +258,7 @@ async def start_stream(
             if vp is not None:
                 vp.stop()
             log.debug("stream cleanup done for guild %s", guild.id)
+            schedule_idle_leave(bot, guild, send, _idle_leave_timeout())
 
     audio_task = asyncio.create_task(_run_audio())
     bot.stream_tasks[guild.id] = audio_task
@@ -380,6 +381,7 @@ async def start_live_stream(
                 except Exception:
                     pass
             log.debug("go-live cleanup done for guild %s", guild.id)
+            schedule_idle_leave(bot, guild, send, _idle_leave_timeout())
 
     live_task = asyncio.create_task(_run_live())
     bot.stream_tasks[guild.id] = live_task
