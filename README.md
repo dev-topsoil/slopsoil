@@ -48,6 +48,7 @@ Features include TVheadend integration, Jellyfin integration, M3U/IPTV playlist 
 - **TVheadend integration** - browse and play live TV channels from a TVheadend server; search the EPG by show title and schedule playback; showtimes are shown in the configured timezone
 - **Jellyfin integration** - search and stream movies, series, and episodes from a Jellyfin media server; transcoding is offloaded to Jellyfin so the bot streams H.264/AAC with subtitles suppressed
 - **Auto-leave on empty channel** - the bot automatically leaves and stops streaming when the last user leaves the voice channel
+- **Auto-leave when idle** *(optional)* - set `IDLE_LEAVE_TIMEOUT` (seconds) to make the bot leave after playback has been idle that long; unset/`0` disables it (default)
 - **Go-live / screenshare delivery** - streams appear as a screenshare so all members in the channel can watch
 - **H.264 hardware acceleration** - auto-detects NVIDIA NVENC, VA-API (Intel/AMD), or falls back to software encoding
 - **Discord DAVE E2EE support** - correctly handles Discord's end-to-end encryption protocol for voice channels
@@ -223,6 +224,10 @@ STREAM_PACKET_PACE=
 # (fixes "audio behind"); negative delays audio (fixes "audio ahead"). Dial in
 # by testing; clamped to +/-5000.
 STREAM_AV_SYNC_MS=
+
+# Optional - auto-leave voice after this many seconds of post-playback idle
+# (no video playing). Unset, empty, or 0 disables it (default). 300 = 5 minutes.
+IDLE_LEAVE_TIMEOUT=
 ```
 
 | Variable | Required | Description |
@@ -242,6 +247,7 @@ STREAM_AV_SYNC_MS=
 | `STREAM_VIDEO_BITRATE` | No | Override the preset video bitrate (used for `-b:v`/`-maxrate`/`-bufsize`, CBR), e.g. `2500k`. |
 | `STREAM_PACKET_PACE` | No | Spread each frame's RTP packets across this fraction of the frame interval instead of bursting them (default `0.0` = off; e.g. `0.75`). Can reduce freezes caused by dropped packet bursts on some networks. Clamped to 0.0–0.95. |
 | `STREAM_AV_SYNC_MS` | No | Lip-sync correction in ms (default `0`). Audio and video send on independent threads, so a constant offset can appear. **Positive** advances audio (fixes "audio behind"); **negative** delays audio (fixes "audio ahead"). Dial in by testing; clamped to ±5000. |
+| `IDLE_LEAVE_TIMEOUT` | No | Seconds of post-playback idle (nothing playing) before the bot auto-leaves voice. Unset, empty, or `0` disables it (default). Example: `300` = 5 minutes. The timer arms when a video finishes or you `!stop`, and is cancelled by starting new playback or `!leave`. |
 
 TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, the `!channels`, `!search`, and TVheadend-backed `!play` commands are not loaded.
 
