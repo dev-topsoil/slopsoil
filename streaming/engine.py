@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -70,6 +71,82 @@ def cancel_live_stream(bot: SlopSoil, guild_id: int) -> None:
     """
     cancel_stream(bot, guild_id)  # reuses task + video_player slots
     # live_connections is cleaned up by the task's finally block
+
+
+def _idle_leave_timeout() -> float:
+    """Seconds of post-playback idle before auto-leaving voice. 0 = disabled."""
+    raw = os.environ.get("IDLE_LEAVE_TIMEOUT", "").strip()
+    if not raw:
+        return 0.0
+    try:
+        v = float(raw)
+    except ValueError:
+        return 0.0
+    return v if v > 0 else 0.0
+
+
+def _format_idle(seconds: float) -> str:
+    """Render an idle duration like '5 min', '30 sec', or '1 min 30 sec'."""
+    total = int(round(seconds))
+    mins, secs = divmod(total, 60)
+    if mins and secs:
+        return f"{mins} min {secs} sec"
+    if mins:
+        return f"{mins} min"
+    return f"{secs} sec"
+
+
+def cancel_idle_leave(bot: SlopSoil, guild_id: int) -> None:
+    """Cancel any pending idle-leave timer for a guild."""
+    task = bot.idle_leave_tasks.pop(guild_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def schedule_idle_leave(bot: SlopSoil, guild, send, timeout: float) -> None:
+    """Arm a one-shot idle-leave timer for a guild (replaces any existing one).
+
+    No-op when timeout <= 0 (feature disabled).
+    """
+    cancel_idle_leave(bot, guild.id)
+    if timeout <= 0:
+        return
+    bot.idle_leave_tasks[guild.id] = asyncio.create_task(
+        _idle_leave_after(bot, guild, send, timeout)
+    )
+
+
+async def _idle_leave_after(bot: SlopSoil, guild, send, timeout: float) -> None:
+    """Sleep, then leave if still idle. Self-removes from the task registry."""
+    try:
+        await asyncio.sleep(timeout)
+        await _idle_leave_now(bot, guild, send, timeout)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        # Only clear our own slot — a re-arm may have replaced us already.
+        if bot.idle_leave_tasks.get(guild.id) is asyncio.current_task():
+            del bot.idle_leave_tasks[guild.id]
+
+
+async def _idle_leave_now(bot: SlopSoil, guild, send, timeout: float) -> None:
+    """Disconnect from voice if the bot is genuinely idle; otherwise do nothing."""
+    vc = guild.voice_client
+    if vc is None or not vc.is_connected():
+        return
+    if (
+        guild.id in bot.stream_tasks
+        or guild.id in bot.live_connections
+        or vc.is_playing()
+    ):
+        return  # something resumed — stay
+    log.info("idle for %ss in guild '%s' — disconnecting", timeout, guild)
+    cancel_stream(bot, guild.id)
+    await vc.disconnect(force=False)
+    try:
+        await send(f"left after {_format_idle(timeout)} idle")
+    except Exception:
+        log.debug("failed to send idle-leave notice", exc_info=True)
 
 
 async def start_stream(
