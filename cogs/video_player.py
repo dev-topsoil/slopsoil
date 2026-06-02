@@ -48,6 +48,9 @@ _NAL_AUD: int = 9  # Access Unit Delimiter — marks frame boundaries
 # Nonce base for video — high half of 32-bit space, avoids overlap with audio
 _VIDEO_NONCE_BASE: int = 0x8000_0000
 
+# How often the player logs pacing/throughput diagnostics (seconds).
+_STATS_INTERVAL: float = 10.0
+
 # Regex matching both 3-byte (\x00\x00\x01) and 4-byte (\x00\x00\x00\x01) start codes
 _START_RE = re.compile(rb"\x00\x00\x00?\x01")
 
@@ -447,31 +450,38 @@ class _EncoderConfig:
     vf: str  # -vf value
 
 
-def _test_encoder(name: str, pre_input: list[str]) -> bool:
-    """Return True if FFmpeg can actually use this encoder (device/driver check)."""
+def _test_encoder(name: str, pre_input: list[str], vf: str = "") -> bool:
+    """Return True if FFmpeg can actually use this encoder (device/driver check).
+
+    Mirrors the real encode pipeline: hardware encoders (notably VA-API) require
+    frames on a hardware surface, so the same -vf chain used for real output
+    (e.g. ``format=nv12,hwupload,…``) must be applied here too — otherwise the
+    probe can false-negative even when real encoding would succeed.  On failure
+    the FFmpeg stderr is logged at DEBUG so the reason (missing driver, no
+    device, etc.) is recoverable without guesswork.
+    """
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        *pre_input,
+        "-f", "lavfi",
+        "-i", "nullsrc=size=64x64:rate=1",
+        "-vframes", "1",
+    ]
+    if vf:
+        cmd += ["-vf", vf]
+    cmd += ["-c:v", name, "-f", "null", "-"]
     try:
-        r = subprocess.run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                *pre_input,
-                "-f",
-                "lavfi",
-                "-i",
-                "nullsrc=size=64x64:rate=1",
-                "-vframes",
-                "1",
-                "-c:v",
-                name,
-                "-f",
-                "null",
-                "-",
-            ],
-            capture_output=True,
-            timeout=10,
-        )
+        r = subprocess.run(cmd, capture_output=True, timeout=10)
+        if r.returncode != 0:
+            tail = r.stderr.decode(errors="replace").strip().splitlines()[-3:]
+            log.debug(
+                "encoder %s probe failed (exit %d): %s",
+                name, r.returncode, " | ".join(tail),
+            )
         return r.returncode == 0
-    except Exception:
+    except Exception as exc:
+        log.debug("encoder %s probe error: %s", name, exc)
         return False
 
 
@@ -494,6 +504,70 @@ def _detect_encoder() -> _EncoderConfig | None:
     vaapi_pre = ["-vaapi_device", "/dev/dri/renderD128"]
     res = _stream_resolution()
     br = _stream_bitrate()
+    vaapi_vf = f"format=nv12,hwupload,scale_vaapi={res}"
+
+    # Hardware encoders are preferred over software, so a working GPU is always
+    # used when present.  Each is gated on an actual probe, so a compiled-in but
+    # non-functional encoder is skipped and the next option is tried.
+    if "h264_nvenc" in available:
+        if _test_encoder("h264_nvenc", []):
+            log.info("video encoder: h264_nvenc (NVIDIA)")
+            return _EncoderConfig(
+                name="h264_nvenc",
+                pre_input=[],
+                post_codec=[
+                    "-preset",
+                    "p1",
+                    "-tune",
+                    "ll",
+                    "-profile:v",
+                    "high",
+                    "-level:v",
+                    "4.2",
+                    "-aud",
+                    "1",
+                    "-rc",
+                    "cbr",
+                    "-b:v",
+                    br,
+                    "-maxrate",
+                    br,
+                    "-bufsize",
+                    br,
+                ],
+                vf=f"scale={res}",
+            )
+        log.info(
+            "h264_nvenc is compiled in but unavailable (no usable NVIDIA GPU/driver) "
+            "— skipping"
+        )
+
+    if "h264_vaapi" in available:
+        if _test_encoder("h264_vaapi", vaapi_pre, vaapi_vf):
+            log.info("video encoder: h264_vaapi (VA-API)")
+            return _EncoderConfig(
+                name="h264_vaapi",
+                pre_input=vaapi_pre,
+                post_codec=[
+                    "-rc_mode",
+                    "CBR",
+                    "-profile:v",
+                    "high",
+                    "-level",
+                    "42",
+                    "-aud",
+                    "1",
+                    "-b:v",
+                    br,
+                ],
+                vf=vaapi_vf,
+            )
+        log.warning(
+            "h264_vaapi is compiled in but the VA-API probe failed — falling back to "
+            "software. Likely a missing GPU driver (AMD needs mesa-va-drivers-freeworld) "
+            "or no /dev/dri access. Run `vainfo` in the container to diagnose; enable "
+            "DEBUG logging to see the FFmpeg error."
+        )
 
     if "libx264" in available and _test_encoder("libx264", []):
         log.info("video encoder: libx264 (software)")
@@ -521,73 +595,9 @@ def _detect_encoder() -> _EncoderConfig | None:
             vf=f"scale={res}",
         )
 
-    if "h264_nvenc" in available and _test_encoder("h264_nvenc", []):
-        log.info("video encoder: h264_nvenc (NVIDIA)")
-        return _EncoderConfig(
-            name="h264_nvenc",
-            pre_input=[],
-            post_codec=[
-                "-preset",
-                "p1",
-                "-tune",
-                "ll",
-                "-profile:v",
-                "high",
-                "-level:v",
-                "4.2",
-                "-aud",
-                "1",
-                "-rc",
-                "cbr",
-                "-b:v",
-                br,
-                "-maxrate",
-                br,
-                "-bufsize",
-                br,
-            ],
-            vf=f"scale={res}",
-        )
-
-    if "h264_vaapi" in available and _test_encoder("h264_vaapi", vaapi_pre):
-        log.info("video encoder: h264_vaapi (VA-API)")
-        return _EncoderConfig(
-            name="h264_vaapi",
-            pre_input=vaapi_pre,
-            post_codec=[
-                "-rc_mode",
-                "CBR",
-                "-profile:v",
-                "high",
-                "-level",
-                "42",
-                "-aud",
-                "1",
-                "-b:v",
-                br,
-            ],
-            vf=f"format=nv12,hwupload,scale_vaapi={res}",
-        )
-
     if "libopenh264" in available and _test_encoder("libopenh264", []):
         log.info("video encoder: libopenh264 (software)")
-        return _EncoderConfig(
-            name="libopenh264",
-            pre_input=[],
-            post_codec=[
-                "-profile:v",
-                "constrained_baseline",
-                "-level:v",
-                "4.2",
-                "-b:v",
-                br,
-                "-maxrate",
-                br,
-                "-bufsize",
-                br,
-            ],
-            vf=f"scale={res}",
-        )
+        return _libopenh264_config()
 
     log.warning(
         "no working H.264 encoder found — video streaming disabled. "
@@ -597,7 +607,35 @@ def _detect_encoder() -> _EncoderConfig | None:
     return None
 
 
+def _libopenh264_config() -> _EncoderConfig:
+    """libopenh264 software encoder config — the primary on machines without a
+    working GPU encoder, and the runtime fallback (see _SW_ENCODER) when a
+    hardware encoder accepts no frames (e.g. VA-API on large MPEG-2 keyframes)."""
+    res = _stream_resolution()
+    br = _stream_bitrate()
+    return _EncoderConfig(
+        name="libopenh264",
+        pre_input=[],
+        post_codec=[
+            "-profile:v", "constrained_baseline",
+            "-level:v", "4.2",
+            "-b:v", br,
+            "-maxrate", br,
+            "-bufsize", br,
+        ],
+        vf=f"scale={res}",
+    )
+
+
 _ENCODER: _EncoderConfig | None = _detect_encoder()
+
+# Software encoder to retry with when the hardware encoder produces no output at
+# runtime.  None when the primary is already software or libopenh264 is absent.
+_SW_ENCODER: _EncoderConfig | None = (
+    _libopenh264_config()
+    if _ENCODER is not None and _ENCODER.name != "libopenh264"
+    else None
+)
 
 
 # ── NAL unit utilities ────────────────────────────────────────────────────────
@@ -768,6 +806,12 @@ class H264VideoPlayer(threading.Thread):
         self._packets_sent: int = 0
         self._nonce: list[int] = [_VIDEO_NONCE_BASE]  # mutable for _encrypt()
 
+        # Encoder for the current attempt; run() swaps this to _SW_ENCODER and
+        # retries if a hardware encoder produces no output.
+        self._enc: _EncoderConfig | None = _ENCODER
+        # Frames emitted by the most recent _stream() attempt; 0 = total failure.
+        self._frames_emitted: int = 0
+
         # Set by _emit() the moment the first video frame is transmitted.
         # stream.py waits on this before calling vc.play() so audio doesn't
         # get ahead of video during Discord's video jitter-buffer fill phase.
@@ -788,6 +832,13 @@ class H264VideoPlayer(threading.Thread):
         if proc is not None and proc.poll() is None:
             proc.terminate()
 
+    def is_source_active(self) -> bool:
+        """True while the player may still produce output, including the brief
+        FIFO gap between a failed hardware attempt and the software-fallback
+        restart.  Audio readers poll this so a transient EOF during that restart
+        isn't mistaken for end-of-stream."""
+        return self.is_alive() and not self._end.is_set()
+
     @staticmethod
     def _kill_proc(proc: subprocess.Popen) -> None:
         """SIGTERM then SIGKILL if needed, then reap."""
@@ -804,6 +855,23 @@ class H264VideoPlayer(threading.Thread):
     def run(self) -> None:
         try:
             self._stream()
+            # If a hardware encoder produced no frames at all (e.g. VA-API
+            # "Access unit too large" on large MPEG-2 keyframes), retry once on
+            # the software encoder so the stream still plays.
+            if (
+                not self._end.is_set()
+                and self._frames_emitted == 0
+                and _SW_ENCODER is not None
+                and self._enc is not _SW_ENCODER
+            ):
+                log.warning(
+                    "video encoder %s produced no output — retrying with software "
+                    "encoder %s",
+                    self._enc.name if self._enc else "?", _SW_ENCODER.name,
+                )
+                self._enc = _SW_ENCODER
+                self._proc = None
+                self._stream()
         except Exception:
             log.exception("H264VideoPlayer error")
         finally:
@@ -830,7 +898,7 @@ class H264VideoPlayer(threading.Thread):
     # ── Internals ─────────────────────────────────────────────────────────────
 
     def _ffmpeg_cmd(self) -> list[str]:
-        enc = _ENCODER
+        enc = self._enc
         assert enc is not None, "H264VideoPlayer started with no encoder available"
 
         probe_args = [
@@ -1032,6 +1100,13 @@ class H264VideoPlayer(threading.Thread):
             _p._replace(netloc=(_p.hostname or "") + (f":{_p.port}" if _p.port else ""))
         )
         log.info("Starting H.264 video stream from %s", _safe)
+        # Log the encoder and full FFmpeg command (URL redacted) so the active
+        # encoder is verifiable from the logs, including after a fallback retry.
+        _safe_cmd = [_safe if arg == self._url else arg for arg in cmd]
+        log.info(
+            "FFmpeg encoder=%s command: %s",
+            self._enc.name if self._enc else "?", " ".join(_safe_cmd),
+        )
         self._proc = subprocess.Popen(
             cmd,
             stdin=subprocess.DEVNULL,
@@ -1058,10 +1133,53 @@ class H264VideoPlayer(threading.Thread):
         # next frame deadline, keeping video at exactly self._fps on average.
         _t0: float | None = None
         _n = 0
+        self._frames_emitted = 0  # reset per attempt for the fallback check
+
+        # ── Diagnostics ────────────────────────────────────────────────────────
+        # Flushed to the log every _STATS_INTERVAL seconds.  The two signals that
+        # explain perceived stutter:
+        #   * "late" frames — emits that missed their pacing deadline (slack ≤ 0).
+        #     A burst of these is exactly what a viewer sees as a hitch.
+        #   * "read-block" — wall time the loop spent blocked in stdout.read().
+        #     Near-zero in steady state (FFmpeg encodes a VOD faster than realtime
+        #     so the pipe stays full); a spike means FFmpeg itself stalled
+        #     (decode/encode/GPU), pointing upstream of the pacing loop.
+        _stats_t0 = time.monotonic()
+        _stats_frames = 0
+        _stats_late = 0
+        _stats_late_total = 0.0
+        _stats_late_max = 0.0
+        _stats_read_block = 0.0
+        _stats_pkts0 = 0
+
+        def _flush_stats(now: float) -> None:
+            nonlocal _stats_t0, _stats_frames, _stats_late, _stats_late_total
+            nonlocal _stats_late_max, _stats_read_block, _stats_pkts0
+            window = now - _stats_t0
+            if window <= 0:
+                return
+            log.info(
+                "video stats: %.1f fps (target %.0f) | late %d/%d frames "
+                "(max %.0f ms, total %.0f ms) | ffmpeg read-block %.0f ms / %.1fs "
+                "| %d pkts",
+                _stats_frames / window, self._fps,
+                _stats_late, _stats_frames,
+                _stats_late_max * 1000, _stats_late_total * 1000,
+                _stats_read_block * 1000, window,
+                self._packets_sent - _stats_pkts0,
+            )
+            _stats_t0 = now
+            _stats_frames = 0
+            _stats_late = 0
+            _stats_late_total = 0.0
+            _stats_late_max = 0.0
+            _stats_read_block = 0.0
+            _stats_pkts0 = self._packets_sent
 
         def _emit(f: list[bytes]) -> bool:
             """Send a frame and pace to wall clock. Returns True → stop."""
-            nonlocal _t0, _n
+            nonlocal _t0, _n, _stats_frames, _stats_late
+            nonlocal _stats_late_total, _stats_late_max
             if not f:
                 return False
             if _t0 is None:
@@ -1070,14 +1188,27 @@ class H264VideoPlayer(threading.Thread):
             if not self.first_frame_sent.is_set():
                 self.first_frame_sent.set()
             _n += 1
+            self._frames_emitted = _n
+            _stats_frames += 1
+            now = time.monotonic()
             due = _t0 + _n / self._fps
-            slack = due - time.monotonic()
+            slack = due - now
+            if slack <= 0:
+                lateness = -slack
+                _stats_late += 1
+                _stats_late_total += lateness
+                if lateness > _stats_late_max:
+                    _stats_late_max = lateness
+            if now - _stats_t0 >= _STATS_INTERVAL:
+                _flush_stats(now)
             if slack > 0.001:
                 return self._end.wait(timeout=slack)
             return self._end.is_set()
 
         while not self._end.is_set():
+            _read_t0 = time.monotonic()
             chunk = self._proc.stdout.read(65_536)
+            _stats_read_block += time.monotonic() - _read_t0
             if not chunk:
                 break
 
@@ -1126,6 +1257,7 @@ class H264VideoPlayer(threading.Thread):
                     nal = rewrite_sps_vui(nal)
                 frame.append(nal)
         _emit(frame)
+        _flush_stats(time.monotonic())
 
         # Reap the process; SIGKILL if it's still alive after a short grace period.
         if self._end.is_set() and self._proc.poll() is None:

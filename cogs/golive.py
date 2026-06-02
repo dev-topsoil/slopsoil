@@ -24,6 +24,7 @@ import socket
 import struct
 import threading
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import discord
@@ -427,11 +428,16 @@ class GoLiveAudioSender(threading.Thread):
         self,
         file_obj,
         conn: GoLiveConnection,
+        is_source_active: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__(name="GoLiveAudio", daemon=True)
         self._f = file_obj
         self._conn = conn
         self._end = threading.Event()
+        # Returns True while the video player may still produce output, incl. the
+        # FIFO gap during a software-encoder fallback restart.  When set, a short
+        # read is treated as that gap (wait for the new writer) rather than EOF.
+        self._is_source_active = is_source_active
 
         self._seq: int = 0
         self._ts: int = 0
@@ -468,6 +474,15 @@ class GoLiveAudioSender(threading.Thread):
         while not self._end.is_set():
             pcm = self._f.read(self._FRAME_SIZE)
             if len(pcm) < self._FRAME_SIZE:
+                # Short read = current FFmpeg closed the FIFO write end.  If the
+                # player is mid-fallback (restarting FFmpeg), wait for the new
+                # writer and resume; the read fd stays valid across the gap.
+                if self._is_source_active is not None and self._is_source_active():
+                    if self._end.wait(timeout=0.05):
+                        break
+                    t0 = time.perf_counter()  # reset pacing after the gap
+                    loops = 0
+                    continue
                 break
 
             encoded = encoder.encode(pcm, self._SAMPLES_PER_FRAME)

@@ -35,7 +35,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
 def _load_allowed_ids() -> set[int]:
     raw = os.environ.get("ALLOWED_USER_IDS", "")
     ids = set()
