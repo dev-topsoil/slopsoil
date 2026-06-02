@@ -1,4 +1,4 @@
-"""Tests for cogs/tv.py — timezone formatting helpers."""
+"""Tests for cogs/tv.py timezone helpers and services/ytdlp.py format selector."""
 from __future__ import annotations
 
 import os
@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from cogs.tv import _DEFAULT_YT_FORMAT, _fmt_time, _get_display_tz, _yt_format
+from cogs.tv import _fmt_time, _get_display_tz
+from services.ytdlp import _DEFAULT_YT_FORMAT, _yt_format
 
 
 # ---------------------------------------------------------------------------

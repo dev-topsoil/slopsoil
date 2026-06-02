@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, cast
 import discord
 from discord.ext import commands
 
-from cogs.stream import cancel_stream
 from cogs.utils import resolve_voice
+from streaming.engine import cancel_stream
 from permissions import Role, require_role
 
 if TYPE_CHECKING:

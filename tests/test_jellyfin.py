@@ -1,4 +1,4 @@
-"""Tests for cogs/jellyfin.py — pure functions and JellyfinClient API calls."""
+"""Tests for the Jellyfin cog helpers and the JellyfinClient API calls."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cogs.jellyfin import Jellyfin, JellyfinClient, _fmt_item, _parse_episode_query
+from cogs.jellyfin import Jellyfin, _fmt_item, _parse_episode_query
+from services.jellyfin import JellyfinClient
 
 
 # ---------------------------------------------------------------------------

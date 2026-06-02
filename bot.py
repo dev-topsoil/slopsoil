@@ -14,9 +14,9 @@ import video_compat
 from permissions import Role, get_user_role
 
 if TYPE_CHECKING:
-    from cogs.golive import GoLiveConnection
-    from cogs.iptv import SourceManager
-    from cogs.video_player import H264VideoPlayer
+    from services.sources import SourceManager
+    from streaming.golive import GoLiveConnection
+    from streaming.video_player import H264VideoPlayer
 
 # Replace discord.py-self's broken davey (Rust) with the working libdave shim.
 # Must happen before any voice connections are made.

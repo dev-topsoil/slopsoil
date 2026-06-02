@@ -1,4 +1,4 @@
-"""Tests for stream-profile env knobs in cogs/video_player.py.
+"""Tests for stream-profile env knobs in streaming/video_player.py.
 
 Profile is chosen by the STREAM_QUALITY preset (720p/1080p/4k, default 1080p),
 with STREAM_RESOLUTION / STREAM_FPS / STREAM_VIDEO_BITRATE overriding any axis.
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from cogs.video_player import (
+from streaming.video_player import (
     _packet_pace_fraction,
     _stream_bitrate,
     _stream_fps,

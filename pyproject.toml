@@ -8,7 +8,7 @@ select = ["E", "W", "F", "I", "B", "C4", "UP"]
 [tool.ruff.lint.per-file-ignores]
 # Semicolons are used intentionally in the H.264 SPS/VUI bit-reader to keep
 # paired read-write operations on one line for readability.
-"cogs/video_player.py" = ["E702"]
+"streaming/video_player.py" = ["E702"]
 
 [tool.mypy]
 python_version = "3.12"
