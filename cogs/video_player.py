@@ -594,23 +594,7 @@ def _detect_encoder() -> _EncoderConfig | None:
 
     if "libopenh264" in available and _test_encoder("libopenh264", []):
         log.info("video encoder: libopenh264 (software)")
-        return _EncoderConfig(
-            name="libopenh264",
-            pre_input=[],
-            post_codec=[
-                "-profile:v",
-                "constrained_baseline",
-                "-level:v",
-                "4.2",
-                "-b:v",
-                br,
-                "-maxrate",
-                br,
-                "-bufsize",
-                br,
-            ],
-            vf=f"scale={res}",
-        )
+        return _libopenh264_config()
 
     log.warning(
         "no working H.264 encoder found — video streaming disabled. "
@@ -620,7 +604,35 @@ def _detect_encoder() -> _EncoderConfig | None:
     return None
 
 
+def _libopenh264_config() -> _EncoderConfig:
+    """libopenh264 software encoder config — the primary on machines without a
+    working GPU encoder, and the runtime fallback (see _SW_ENCODER) when a
+    hardware encoder accepts no frames (e.g. VA-API on large MPEG-2 keyframes)."""
+    res = _stream_resolution()
+    br = _stream_bitrate()
+    return _EncoderConfig(
+        name="libopenh264",
+        pre_input=[],
+        post_codec=[
+            "-profile:v", "constrained_baseline",
+            "-level:v", "4.2",
+            "-b:v", br,
+            "-maxrate", br,
+            "-bufsize", br,
+        ],
+        vf=f"scale={res}",
+    )
+
+
 _ENCODER: _EncoderConfig | None = _detect_encoder()
+
+# Software encoder to retry with when the hardware encoder produces no output at
+# runtime.  None when the primary is already software or libopenh264 is absent.
+_SW_ENCODER: _EncoderConfig | None = (
+    _libopenh264_config()
+    if _ENCODER is not None and _ENCODER.name != "libopenh264"
+    else None
+)
 
 
 # ── NAL unit utilities ────────────────────────────────────────────────────────
@@ -791,6 +803,12 @@ class H264VideoPlayer(threading.Thread):
         self._packets_sent: int = 0
         self._nonce: list[int] = [_VIDEO_NONCE_BASE]  # mutable for _encrypt()
 
+        # Encoder for the current attempt; run() swaps this to _SW_ENCODER and
+        # retries if a hardware encoder produces no output.
+        self._enc: _EncoderConfig | None = _ENCODER
+        # Frames emitted by the most recent _stream() attempt; 0 = total failure.
+        self._frames_emitted: int = 0
+
         # Set by _emit() the moment the first video frame is transmitted.
         # stream.py waits on this before calling vc.play() so audio doesn't
         # get ahead of video during Discord's video jitter-buffer fill phase.
@@ -811,6 +829,13 @@ class H264VideoPlayer(threading.Thread):
         if proc is not None and proc.poll() is None:
             proc.terminate()
 
+    def is_source_active(self) -> bool:
+        """True while the player may still produce output, including the brief
+        FIFO gap between a failed hardware attempt and the software-fallback
+        restart.  Audio readers poll this so a transient EOF during that restart
+        isn't mistaken for end-of-stream."""
+        return self.is_alive() and not self._end.is_set()
+
     @staticmethod
     def _kill_proc(proc: subprocess.Popen) -> None:
         """SIGTERM then SIGKILL if needed, then reap."""
@@ -827,6 +852,23 @@ class H264VideoPlayer(threading.Thread):
     def run(self) -> None:
         try:
             self._stream()
+            # If a hardware encoder produced no frames at all (e.g. VA-API
+            # "Access unit too large" on large MPEG-2 keyframes), retry once on
+            # the software encoder so the stream still plays.
+            if (
+                not self._end.is_set()
+                and self._frames_emitted == 0
+                and _SW_ENCODER is not None
+                and self._enc is not _SW_ENCODER
+            ):
+                log.warning(
+                    "video encoder %s produced no output — retrying with software "
+                    "encoder %s",
+                    self._enc.name if self._enc else "?", _SW_ENCODER.name,
+                )
+                self._enc = _SW_ENCODER
+                self._proc = None
+                self._stream()
         except Exception:
             log.exception("H264VideoPlayer error")
         finally:
@@ -853,7 +895,7 @@ class H264VideoPlayer(threading.Thread):
     # ── Internals ─────────────────────────────────────────────────────────────
 
     def _ffmpeg_cmd(self) -> list[str]:
-        enc = _ENCODER
+        enc = self._enc
         assert enc is not None, "H264VideoPlayer started with no encoder available"
 
         probe_args = [
@@ -1055,6 +1097,13 @@ class H264VideoPlayer(threading.Thread):
             _p._replace(netloc=(_p.hostname or "") + (f":{_p.port}" if _p.port else ""))
         )
         log.info("Starting H.264 video stream from %s", _safe)
+        # Log the encoder and full FFmpeg command (URL redacted) so the active
+        # encoder is verifiable from the logs, including after a fallback retry.
+        _safe_cmd = [_safe if arg == self._url else arg for arg in cmd]
+        log.info(
+            "FFmpeg encoder=%s command: %s",
+            self._enc.name if self._enc else "?", " ".join(_safe_cmd),
+        )
         self._proc = subprocess.Popen(
             cmd,
             stdin=subprocess.DEVNULL,
@@ -1081,6 +1130,7 @@ class H264VideoPlayer(threading.Thread):
         # next frame deadline, keeping video at exactly self._fps on average.
         _t0: float | None = None
         _n = 0
+        self._frames_emitted = 0  # reset per attempt for the fallback check
 
         # ── Diagnostics ────────────────────────────────────────────────────────
         # Flushed to the log every _STATS_INTERVAL seconds.  The two signals that
@@ -1135,6 +1185,7 @@ class H264VideoPlayer(threading.Thread):
             if not self.first_frame_sent.is_set():
                 self.first_frame_sent.set()
             _n += 1
+            self._frames_emitted = _n
             _stats_frames += 1
             now = time.monotonic()
             due = _t0 + _n / self._fps
