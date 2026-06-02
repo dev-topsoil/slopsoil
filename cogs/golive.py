@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import socket
 import struct
 import threading
@@ -38,6 +39,23 @@ if TYPE_CHECKING:
     from bot import SlopSoil
 
 log = logging.getLogger(__name__)
+
+
+def _av_sync_ms() -> int:
+    """A/V lip-sync offset in milliseconds (STREAM_AV_SYNC_MS, default 0).
+
+    Audio and video are sent on independent threads with no shared clock, so a
+    roughly constant offset can appear. Positive advances audio (discard that
+    much backlogged initial audio) to fix "audio behind"; negative delays audio
+    start to fix "audio ahead". Dial in by testing. Clamped to +/-5000 ms.
+    """
+    raw = os.environ.get("STREAM_AV_SYNC_MS", "").strip()
+    if raw:
+        try:
+            return max(-5000, min(5000, int(raw)))
+        except ValueError:
+            log.warning("STREAM_AV_SYNC_MS=%r not an integer; using 0", raw)
+    return 0
 
 # Main gateway opcodes for go-live streaming (not present in discord.py-self)
 _OP_STREAM_CREATE = 18
@@ -432,7 +450,18 @@ class GoLiveAudioSender(threading.Thread):
     def _send_audio(self) -> None:
         encoder = _opus.Encoder()
 
-        log.info("GoLiveAudio: starting audio transmission")
+        # A/V lip-sync offset (STREAM_AV_SYNC_MS). Positive advances audio by
+        # discarding backlogged initial audio (fixes "audio behind"); negative
+        # holds audio start (fixes "audio ahead").
+        offset_ms = _av_sync_ms()
+        if offset_ms > 0:
+            for _ in range(int(offset_ms / (self._FRAME_DURATION * 1000))):
+                if self._end.is_set() or len(self._f.read(self._FRAME_SIZE)) < self._FRAME_SIZE:
+                    break
+        elif offset_ms < 0:
+            self._end.wait(timeout=(-offset_ms) / 1000.0)
+
+        log.info("GoLiveAudio: starting audio transmission (av_sync_ms=%d)", offset_ms)
         t0 = time.perf_counter()
         loops = 0
 

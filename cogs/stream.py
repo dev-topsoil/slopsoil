@@ -23,8 +23,9 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import discord
 
 from cogs.golive import GoLiveAudioSender, GoLiveConnection, _GoLiveVCProxy
+from cogs.utils import ensure_voice
 from cogs.video_player import _ENCODER as _VIDEO_ENCODER
-from cogs.video_player import H264VideoPlayer, _AudioPipeSource
+from cogs.video_player import H264VideoPlayer, _AudioPipeSource, _stream_fps
 
 if TYPE_CHECKING:
     from bot import SlopSoil
@@ -93,13 +94,10 @@ async def start_stream(
     subtitle — optional secondary label (channel number, episode code, etc.)
     """
     # ── Voice connection ──────────────────────────────────────────────────────
-    if vc:
-        if vc.channel != voice_channel:
-            log.info("moving to voice channel '%s'", voice_channel)
-            await vc.move_to(voice_channel)
-    else:
-        log.info("connecting to voice channel '%s' in guild '%s'", voice_channel, guild)
-        vc = await voice_channel.connect(self_deaf=True)
+    # Join (or move to) the requester's channel before playing. A stale,
+    # no-longer-connected voice client would otherwise be trusted as-is, so the
+    # bot "plays" without ever being in the channel.
+    vc = await ensure_voice(voice_channel, vc)
 
     if _VIDEO_ENCODER is not None:
         await guild.change_voice_state(
@@ -121,7 +119,7 @@ async def start_stream(
     video_player: H264VideoPlayer | None = None
     if _VIDEO_ENCODER is not None:
         video_player = H264VideoPlayer(
-            url=url, voice_client=vc, fps=60.0,
+            url=url, voice_client=vc, fps=_stream_fps(),
             live=live, audio=audio, probe_size=probe_size,
         )
         bot.video_players[guild.id] = video_player
@@ -221,13 +219,10 @@ async def start_live_stream(
         return
 
     # ── Voice connection ──────────────────────────────────────────────────────
-    if vc:
-        if vc.channel != voice_channel:
-            log.info("moving to voice channel '%s'", voice_channel)
-            await vc.move_to(voice_channel)
-    else:
-        log.info("connecting to voice channel '%s' in guild '%s'", voice_channel, guild)
-        vc = await voice_channel.connect(self_deaf=True)
+    # Join (or move to) the requester's channel before playing. A stale,
+    # no-longer-connected voice client would otherwise be trusted as-is, so the
+    # bot "plays" without ever being in the channel.
+    vc = await ensure_voice(voice_channel, vc)
 
     cancel_live_stream(bot, guild.id)
     if vc.is_playing():
@@ -251,7 +246,7 @@ async def start_live_stream(
     # ── Video (H264VideoPlayer via go-live connection) ────────────────────────
     proxy_vc = _GoLiveVCProxy(conn)
     video_player = H264VideoPlayer(
-        url=url, voice_client=proxy_vc, fps=60.0,  # type: ignore[arg-type]
+        url=url, voice_client=proxy_vc, fps=_stream_fps(),  # type: ignore[arg-type]
         live=live, audio=audio, probe_size=probe_size,
     )
     bot.video_players[guild.id] = video_player

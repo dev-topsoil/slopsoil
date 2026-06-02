@@ -33,6 +33,13 @@ _H264_PT: int = 101  # payload type (matches video_compat.H264_PAYLOAD_TYPE)
 _CLOCK: int = 90_000  # 90 kHz RTP clock rate for video
 _MTU: int = 1_200  # safe MTU for Discord voice UDP
 
+# Optionally spread each frame's RTP packets across a fraction of the frame
+# interval instead of bursting them. A large keyframe is dozens of packets;
+# bursting them can overrun a receiver's ingest, which drops the burst → a
+# freeze. Pacing (like a real WebRTC sender) keeps the instantaneous rate down.
+# Opt-in via STREAM_PACKET_PACE (default 0.0 = off); see _packet_pace_fraction.
+_DEFAULT_PACKET_PACE: float = 0.0
+
 # H.264 NAL unit type IDs (low 5 bits of NAL header byte)
 _NAL_NON_IDR: int = 1
 _NAL_IDR: int = 5
@@ -360,6 +367,81 @@ def rewrite_sps_vui(nal: bytes) -> bytes:
 # ── Encoder detection ─────────────────────────────────────────────────────────
 
 
+# ── Stream profile (env-tunable; defaults match historical behavior) ──────────
+# Select output resolution/fps/bitrate as a single STREAM_QUALITY tier, or
+# override any one axis with the vars below. Discord enforces per-account
+# resolution/fps caps (e.g. 720p30 up to 4K60 by tier), so pick a tier your
+# account actually supports.
+
+# STREAM_QUALITY presets → (resolution, fps, video bitrate).
+_STREAM_PRESETS: dict[str, tuple[str, float, str]] = {
+    "720p": ("1280:720", 30.0, "2500k"),
+    "1080p": ("1920:1080", 60.0, "6000k"),
+    "4k": ("3840:2160", 60.0, "12000k"),
+}
+_DEFAULT_QUALITY = "1080p"
+
+
+def _packet_pace_fraction() -> float:
+    """Fraction of the frame interval to spread each frame's RTP packets across,
+    instead of bursting them (see _DEFAULT_PACKET_PACE). STREAM_PACKET_PACE,
+    default 0.0 (disabled). Clamped to 0.0-0.95 so pacing never bleeds into the
+    next frame; e.g. 0.75 spreads packets over 75% of the frame interval."""
+    raw = os.environ.get("STREAM_PACKET_PACE", "").strip()
+    if raw:
+        try:
+            return max(0.0, min(0.95, float(raw)))
+        except ValueError:
+            log.warning("STREAM_PACKET_PACE=%r not a number; pacing disabled", raw)
+    return _DEFAULT_PACKET_PACE
+
+
+def _stream_preset() -> tuple[str, float, str]:
+    """(resolution, fps, bitrate) selected by STREAM_QUALITY (720p/1080p/4k);
+    defaults to 1080p — the historical hardcoded profile."""
+    raw = os.environ.get("STREAM_QUALITY", "").strip().lower()
+    if raw:
+        if raw in _STREAM_PRESETS:
+            return _STREAM_PRESETS[raw]
+        log.warning(
+            "STREAM_QUALITY=%r unknown (want %s); using %s",
+            raw, "/".join(_STREAM_PRESETS), _DEFAULT_QUALITY,
+        )
+    return _STREAM_PRESETS[_DEFAULT_QUALITY]
+
+
+def _stream_resolution() -> str:
+    """Output size as 'W:H' for the scaler. STREAM_RESOLUTION (accepts
+    '1280:720' or '1280x720') overrides the STREAM_QUALITY preset."""
+    raw = os.environ.get("STREAM_RESOLUTION", "").strip().replace("x", ":")
+    if raw:
+        if re.fullmatch(r"\d{2,5}:\d{2,5}", raw):
+            return raw
+        log.warning("STREAM_RESOLUTION=%r invalid (want W:H); using preset", raw)
+    return _stream_preset()[0]
+
+
+def _stream_bitrate() -> str:
+    """Target video bitrate for -b:v/-maxrate/-bufsize (e.g. '2500k').
+    STREAM_VIDEO_BITRATE overrides the STREAM_QUALITY preset."""
+    return os.environ.get("STREAM_VIDEO_BITRATE", "").strip() or _stream_preset()[2]
+
+
+def _stream_fps() -> float:
+    """Output frame rate. STREAM_FPS (1-60) overrides the STREAM_QUALITY preset.
+    Matching the source fps avoids wasteful frame duplication."""
+    raw = os.environ.get("STREAM_FPS", "").strip()
+    if raw:
+        try:
+            v = float(raw)
+            if 1.0 <= v <= 60.0:
+                return v
+            log.warning("STREAM_FPS=%s out of range 1-60; using preset", raw)
+        except ValueError:
+            log.warning("STREAM_FPS=%r not a number; using preset", raw)
+    return _stream_preset()[1]
+
+
 @dataclasses.dataclass
 class _EncoderConfig:
     name: str
@@ -420,7 +502,9 @@ def _detect_encoder() -> _EncoderConfig | None:
     available = result.stdout
 
     vaapi_pre = ["-vaapi_device", "/dev/dri/renderD128"]
-    vaapi_vf = "format=nv12,hwupload,scale_vaapi=1920:1080"
+    res = _stream_resolution()
+    br = _stream_bitrate()
+    vaapi_vf = f"format=nv12,hwupload,scale_vaapi={res}"
 
     if "libx264" in available and _test_encoder("libx264", []):
         log.info("video encoder: libx264 (software)")
@@ -439,13 +523,13 @@ def _detect_encoder() -> _EncoderConfig | None:
                 "-x264-params",
                 "aud=1",
                 "-b:v",
-                "6000k",
+                br,
                 "-maxrate",
-                "6000k",
+                br,
                 "-bufsize",
-                "12000k",
+                br,
             ],
-            vf="scale=1920:1080",
+            vf=f"scale={res}",
         )
 
     if "h264_nvenc" in available:
@@ -465,14 +549,16 @@ def _detect_encoder() -> _EncoderConfig | None:
                     "4.2",
                     "-aud",
                     "1",
+                    "-rc",
+                    "cbr",
                     "-b:v",
-                    "6000k",
+                    br,
                     "-maxrate",
-                    "6000k",
+                    br,
                     "-bufsize",
-                    "12000k",
+                    br,
                 ],
-                vf="scale=1920:1080",
+                vf=f"scale={res}",
             )
         log.info(
             "h264_nvenc is compiled in but unavailable (no usable NVIDIA GPU/driver) "
@@ -495,7 +581,7 @@ def _detect_encoder() -> _EncoderConfig | None:
                     "-aud",
                     "1",
                     "-b:v",
-                    "6000k",
+                    br,
                 ],
                 vf=vaapi_vf,
             )
@@ -517,13 +603,13 @@ def _detect_encoder() -> _EncoderConfig | None:
                 "-level:v",
                 "4.2",
                 "-b:v",
-                "6000k",
+                br,
                 "-maxrate",
-                "6000k",
+                br,
                 "-bufsize",
-                "12000k",
+                br,
             ],
-            vf="scale=1920:1080",
+            vf=f"scale={res}",
         )
 
     log.warning(
@@ -775,12 +861,17 @@ class H264VideoPlayer(threading.Thread):
             "-analyzeduration", str(self._probe_size),
         ]
         pre_input = enc.pre_input
-        rate_args: list[str] = []
+        is_url = self._url.startswith(("http://", "https://", "rtmp://", "rtsp://"))
+        # Pace a local VOD file at native rate so FFmpeg emits audio+video in
+        # lockstep at real time instead of racing ahead and bursting — tighter
+        # A/V sync and smoother delivery. Live inputs / URLs are already
+        # real-time, so -re would only stall them.
+        rate_args: list[str] = [] if (self._live or is_url) else ["-re"]
         fflags = "+discardcorrupt"
         # -reconnect flags are HTTP-only; FFmpeg rejects them for local files.
         reconnect_args = (
             ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
-            if self._url.startswith(("http://", "https://", "rtmp://", "rtsp://"))
+            if is_url
             else []
         )
         video_out_args = [
@@ -883,6 +974,18 @@ class H264VideoPlayer(threading.Thread):
         if not all_payloads:
             return
 
+        # Optionally pace the frame's packets across part of the frame interval
+        # instead of bursting them (STREAM_PACKET_PACE; off by default). Absolute-
+        # deadline sleep so it self-corrects despite ~1ms sleep granularity;
+        # interruptible by stop.
+        pace = _packet_pace_fraction()
+        n = len(all_payloads)
+        per_pkt = (
+            (pace / self._fps) / n
+            if (self._fps > 0 and n > 1 and pace > 0)
+            else 0.0
+        )
+        deadline = time.monotonic()
         for i, payload in enumerate(all_payloads):
             marker = i == len(all_payloads) - 1
             hdr = _rtp_header(self._seq, self._ts, self._ssrc, marker=marker)
@@ -893,6 +996,11 @@ class H264VideoPlayer(threading.Thread):
             except OSError:
                 log.debug("Video packet dropped (seq=%d)", self._seq)
             self._seq = (self._seq + 1) & 0xFFFF
+            if per_pkt:
+                deadline += per_pkt
+                slack = deadline - time.monotonic()
+                if slack > 0 and self._end.wait(timeout=slack):
+                    break  # stop requested mid-frame
 
         self._ts = (self._ts + self._ts_inc) & 0xFFFF_FFFF
 
