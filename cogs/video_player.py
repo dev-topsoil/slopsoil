@@ -506,32 +506,9 @@ def _detect_encoder() -> _EncoderConfig | None:
     br = _stream_bitrate()
     vaapi_vf = f"format=nv12,hwupload,scale_vaapi={res}"
 
-    if "libx264" in available and _test_encoder("libx264", []):
-        log.info("video encoder: libx264 (software)")
-        return _EncoderConfig(
-            name="libx264",
-            pre_input=[],
-            post_codec=[
-                "-preset",
-                "ultrafast",
-                "-tune",
-                "zerolatency",
-                "-profile:v",
-                "high",
-                "-level:v",
-                "4.2",
-                "-x264-params",
-                "aud=1",
-                "-b:v",
-                br,
-                "-maxrate",
-                br,
-                "-bufsize",
-                br,
-            ],
-            vf=f"scale={res}",
-        )
-
+    # Hardware encoders are preferred over software, so a working GPU is always
+    # used when present.  Each is gated on an actual probe, so a compiled-in but
+    # non-functional encoder is skipped and the next option is tried.
     if "h264_nvenc" in available:
         if _test_encoder("h264_nvenc", []):
             log.info("video encoder: h264_nvenc (NVIDIA)")
@@ -590,6 +567,32 @@ def _detect_encoder() -> _EncoderConfig | None:
             "software. Likely a missing GPU driver (AMD needs mesa-va-drivers-freeworld) "
             "or no /dev/dri access. Run `vainfo` in the container to diagnose; enable "
             "DEBUG logging to see the FFmpeg error."
+        )
+
+    if "libx264" in available and _test_encoder("libx264", []):
+        log.info("video encoder: libx264 (software)")
+        return _EncoderConfig(
+            name="libx264",
+            pre_input=[],
+            post_codec=[
+                "-preset",
+                "ultrafast",
+                "-tune",
+                "zerolatency",
+                "-profile:v",
+                "high",
+                "-level:v",
+                "4.2",
+                "-x264-params",
+                "aud=1",
+                "-b:v",
+                br,
+                "-maxrate",
+                br,
+                "-bufsize",
+                br,
+            ],
+            vf=f"scale={res}",
         )
 
     if "libopenh264" in available and _test_encoder("libopenh264", []):
