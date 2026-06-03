@@ -89,12 +89,12 @@ def test_resolution_invalid_falls_back_to_preset(monkeypatch):
 
 
 def test_bitrate_follows_preset():
-    assert _stream_bitrate() == "6000k"
+    assert _stream_bitrate() == "12000k"
 
 
 def test_bitrate_follows_720p_preset(monkeypatch):
     monkeypatch.setenv("STREAM_QUALITY", "720p")
-    assert _stream_bitrate() == "2500k"
+    assert _stream_bitrate() == "10000k"
 
 
 def test_bitrate_override_beats_preset(monkeypatch):
@@ -105,7 +105,7 @@ def test_bitrate_override_beats_preset(monkeypatch):
 
 def test_bitrate_blank_falls_back_to_preset(monkeypatch):
     monkeypatch.setenv("STREAM_VIDEO_BITRATE", "   ")
-    assert _stream_bitrate() == "6000k"
+    assert _stream_bitrate() == "12000k"
 
 
 # ---------------------------------------------------------------------------
