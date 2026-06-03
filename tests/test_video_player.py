@@ -35,22 +35,22 @@ def _clear_profile_env(monkeypatch):
 
 
 def test_preset_default_is_1080p():
-    assert _stream_preset() == ("1920:1080", 60.0, "6000k")
+    assert _stream_preset() == ("1920:1080", 60.0, "12000k")
 
 
 def test_preset_720p(monkeypatch):
     monkeypatch.setenv("STREAM_QUALITY", "720p")
-    assert _stream_preset() == ("1280:720", 30.0, "2500k")
+    assert _stream_preset() == ("1280:720", 30.0, "10000k")
 
 
 def test_preset_4k_case_insensitive(monkeypatch):
     monkeypatch.setenv("STREAM_QUALITY", "4K")
-    assert _stream_preset() == ("3840:2160", 60.0, "12000k")
+    assert _stream_preset() == ("3840:2160", 60.0, "24000k")
 
 
 def test_preset_unknown_falls_back_to_default(monkeypatch):
     monkeypatch.setenv("STREAM_QUALITY", "potato")
-    assert _stream_preset() == ("1920:1080", 60.0, "6000k")
+    assert _stream_preset() == ("1920:1080", 60.0, "12000k")
 
 
 # ---------------------------------------------------------------------------
