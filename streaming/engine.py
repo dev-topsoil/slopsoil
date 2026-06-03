@@ -22,10 +22,10 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import discord
 
-from cogs.golive import GoLiveAudioSender, GoLiveConnection, _GoLiveVCProxy
 from cogs.utils import ensure_voice
-from cogs.video_player import _ENCODER as _VIDEO_ENCODER
-from cogs.video_player import H264VideoPlayer, _AudioPipeSource, _stream_fps
+from streaming.golive import GoLiveAudioSender, GoLiveConnection, _GoLiveVCProxy
+from streaming.video_player import _ENCODER as _VIDEO_ENCODER
+from streaming.video_player import H264VideoPlayer, _AudioPipeSource, _stream_fps
 
 if TYPE_CHECKING:
     from bot import SlopSoil

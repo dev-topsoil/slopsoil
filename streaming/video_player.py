@@ -375,9 +375,9 @@ def rewrite_sps_vui(nal: bytes) -> bytes:
 
 # STREAM_QUALITY presets → (resolution, fps, video bitrate).
 _STREAM_PRESETS: dict[str, tuple[str, float, str]] = {
-    "720p": ("1280:720", 30.0, "2500k"),
-    "1080p": ("1920:1080", 60.0, "6000k"),
-    "4k": ("3840:2160", 60.0, "12000k"),
+    "720p": ("1280:720", 30.0, "10000k"),
+    "1080p": ("1920:1080", 60.0, "12000k"),
+    "4k": ("3840:2160", 60.0, "24000k"),
 }
 _DEFAULT_QUALITY = "1080p"
 

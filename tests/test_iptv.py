@@ -1,4 +1,4 @@
-"""Tests for cogs/iptv.py — probe_stream and extract_hls_variant_url."""
+"""Tests for the probe_stream and extract_hls_variant_url services."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cogs.iptv import extract_hls_variant_url, probe_stream
+from services.hls import extract_hls_variant_url
+from services.probe import probe_stream
 
 
 # ---------------------------------------------------------------------------

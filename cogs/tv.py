@@ -1,276 +1,41 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import json
 import logging
 import os
-import shutil
 import tempfile
 import time
 import urllib.error
-import urllib.request
 from collections.abc import Callable
 from datetime import datetime, timezone, tzinfo as _TZInfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import discord
 from discord.ext import commands
 
-from cogs.iptv import extract_hls_variant_url as _extract_hls_variant_url
-from cogs.iptv import fetch_xmltv_now_playing as _fetch_xmltv_now_playing
-from cogs.iptv import probe_stream as _probe_stream
-from cogs.stream import start_live_stream
 from cogs.utils import resolve_voice
 from permissions import Role, require_role
+from services.epg import fetch_xmltv_now_playing as _fetch_xmltv_now_playing
+from services.hls import extract_hls_variant_url as _extract_hls_variant_url
+from services.probe import probe_stream as _probe_stream
+from services.tvheadend import TVheadendClient
+from services.ytdlp import (
+    _yt_cleanup_after_stream,
+    _yt_download,
+    _yt_extract_live_url,
+    _yt_remove_dir,
+)
+from streaming.engine import start_live_stream
 
 # {source_name: (fetched_at, {tvg_id: title})} — refreshed every 15 minutes
 _epg_cache: dict[str, tuple[float, dict[str, str]]] = {}
-
-# Default yt-dlp format selector for downloaded VODs — best available v+a.
-_DEFAULT_YT_FORMAT = "bestvideo+bestaudio/best"
-
-
-def _yt_format() -> str:
-    """yt-dlp format selector used to download `!play <URL>` VODs.
-
-    Defaults to `_DEFAULT_YT_FORMAT` (best available video+audio).  Override via
-    the ``YTDLP_FORMAT`` env var to pin a codec/resolution — useful on hardware
-    that can't decode AV1/4K in real time, or to avoid downloading 4K only to
-    downscale it (e.g. ``bv*[vcodec^=avc1][height<=1080]+ba/b[height<=1080]``).
-    An unset or blank value falls back to the default.
-    """
-    return os.environ.get("YTDLP_FORMAT", "").strip() or _DEFAULT_YT_FORMAT
-
-
-async def _yt_download(url: str, out_dir: str) -> tuple[str, str]:
-    """Download url into out_dir via yt-dlp. Returns (file_path, title)."""
-    import yt_dlp
-
-    def _run() -> tuple[str, str]:
-        opts = {
-            "format": _yt_format(),
-            "outtmpl": os.path.join(out_dir, "%(id)s.%(ext)s"),
-            "merge_output_format": "mp4",
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-        }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-
-        title: str = (info or {}).get("title", "video")
-        downloads = (info or {}).get("requested_downloads", [])
-        if downloads:
-            candidate = downloads[0].get("filepath", "")
-            if candidate and os.path.isfile(candidate):
-                return candidate, title
-
-        files = [f for f in Path(out_dir).iterdir() if f.is_file()]
-        if not files:
-            raise FileNotFoundError("yt-dlp produced no output file")
-        return str(max(files, key=lambda f: f.stat().st_size)), title
-
-    return await asyncio.to_thread(_run)
-
-
-def _yt_remove_dir(path: str) -> None:
-    try:
-        shutil.rmtree(path, ignore_errors=True)
-        log.info("removed yt-dlp temp dir: %s", path)
-    except Exception as exc:
-        log.warning("failed to remove %s: %s", path, exc)
-
-
-async def _yt_cleanup_after_stream(task: asyncio.Task, tmp_dir: str) -> None:
-    try:
-        await task
-    except (asyncio.CancelledError, Exception):
-        pass
-    finally:
-        _yt_remove_dir(tmp_dir)
-
-
-async def _yt_extract_live_url(url: str) -> tuple[str, str] | None:
-    """Return (stream_url, title) if url is a live broadcast, else None.
-
-    Uses yt-dlp metadata only — no download — so it's fast.  If the stream is
-    upcoming (not yet started) or the URL is not a live broadcast, returns None.
-    """
-    import yt_dlp
-
-    def _run() -> tuple[str, str] | None:
-        opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-
-        if not info or info.get("live_status") != "is_live":
-            return None
-
-        title: str = info.get("title") or "YouTube Live"
-
-        # Prefer an HLS variant with both video and audio tracks.
-        formats: list[dict] = info.get("formats") or []
-        hls = [
-            f for f in formats
-            if f.get("protocol", "").startswith("m3u8")
-            and f.get("url")
-            and f.get("vcodec") not in (None, "none")
-        ]
-        if hls:
-            best = max(hls, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))
-            return best["url"], title
-
-        if info.get("url"):
-            return info["url"], title
-
-        return None
-
-    return await asyncio.to_thread(_run)
 
 if TYPE_CHECKING:
     from bot import SlopSoil
 
 log = logging.getLogger(__name__)
-
-
-class TVheadendClient:
-    def __init__(self, url: str, user: str, password: str):
-        self.base_url = url.rstrip("/")
-        self.user = user
-        self.password = password
-        creds = base64.b64encode(f"{user}:{password}".encode()).decode()
-        self._auth = f"Basic {creds}"
-        self._now_playing_cache: tuple[float, dict[str, str]] = (0.0, {})
-
-    @classmethod
-    def from_env(cls) -> TVheadendClient | None:
-        """Build a client from TVHEADEND_URL/USER/PASS, or None if any are unset.
-
-        Keeping this here means the "is TVheadend configured?" decision lives in
-        one place; the cog and bot just check for None.
-        """
-        url = os.environ.get("TVHEADEND_URL")
-        user = os.environ.get("TVHEADEND_USER")
-        password = os.environ.get("TVHEADEND_PASS")
-        if url and user and password:
-            return cls(url, user, password)
-        return None
-
-    async def get_channels(self) -> list[dict]:
-        def _fetch():
-            endpoint = f"{self.base_url}/api/channel/grid?limit=99999"
-            log.debug("fetching channel grid from %s", endpoint)
-            req = urllib.request.Request(
-                endpoint, headers={"Authorization": self._auth}
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
-            all_entries = data.get("entries", [])
-            enabled = [e for e in all_entries if e.get("enabled", True)]
-            log.debug(
-                "TVheadend returned %d total channels, %d enabled",
-                len(all_entries),
-                len(enabled),
-            )
-            return enabled
-
-        entries = await asyncio.to_thread(_fetch)
-        if entries:
-            log.info("sample channel entry (first result): %s", entries[0])
-        return sorted(entries, key=lambda c: c.get("number", 999_999))
-
-    async def get_epg_events(self, query: str, limit: int = 100) -> list[dict]:
-        """Return EPG events whose title contains query (case-insensitive)."""
-
-        def _fetch():
-            endpoint = (
-                f"{self.base_url}/api/epg/events/grid"
-                f"?limit={limit}&title={quote(query, safe='')}"
-            )
-            log.debug("fetching EPG events from %s", endpoint)
-            req = urllib.request.Request(
-                endpoint, headers={"Authorization": self._auth}
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
-            return data.get("entries", [])
-
-        entries = await asyncio.to_thread(_fetch)
-        # TVheadend may return inexact matches; filter client-side too
-        q = query.lower()
-        return [e for e in entries if q in e.get("title", "").lower()]
-
-    async def get_now_playing(self) -> dict[str, str]:
-        """
-        Return {channel_uuid: programme_title} for all currently airing events.
-
-        Fetches up to 10 000 EPG events (TVheadend returns them sorted by start
-        time ascending) and keeps only the ones whose window contains the current
-        moment.  For typical personal setups (≤600 channels with a 1-day past-EPG
-        window) this single request is sufficient.  If the EPG is unavailable or
-        returns no matches the dict is simply empty — callers degrade gracefully.
-
-        Results are cached for 60 seconds so repeated !channels calls don't hammer
-        the EPG endpoint.
-        """
-        cached_ts, cached_data = self._now_playing_cache
-        if time.time() - cached_ts < 60:
-            log.debug(
-                "now-playing: returning cached data (%d entries)", len(cached_data)
-            )
-            return cached_data
-
-        def _fetch() -> dict[str, str]:
-            now = time.time()
-            endpoint = f"{self.base_url}/api/epg/events/grid?limit=10000"
-            log.debug("fetching now-playing EPG from %s", endpoint)
-            req = urllib.request.Request(
-                endpoint, headers={"Authorization": self._auth}
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read())
-            result: dict[str, str] = {}
-            for e in data.get("entries", []):
-                if e.get("start", 0) <= now < e.get("stop", 0):
-                    uuid = e.get("channelUuid", "")
-                    if uuid and uuid not in result:
-                        result[uuid] = e.get("title", "")
-            log.debug(
-                "now-playing: %d/%d EPG events matched current time",
-                len(result),
-                len(data.get("entries", [])),
-            )
-            return result
-
-        result = await asyncio.to_thread(_fetch)
-        self._now_playing_cache = (time.time(), result)
-        return result
-
-    def stream_url(self, uuid: str) -> str:
-        parsed = urlparse(self.base_url)
-        netloc = (
-            f"{quote(self.user, safe='')}:{quote(self.password, safe='')}"
-            f"@{parsed.hostname}"
-        )
-        if parsed.port:
-            netloc += f":{parsed.port}"
-        return urlunparse(
-            (parsed.scheme, netloc, f"/stream/channel/{uuid}", "", "", "")
-        )
-
-    def safe_stream_url(self, uuid: str) -> str:
-        """Stream URL with password redacted — safe to log."""
-        parsed = urlparse(self.base_url)
-        netloc = f"{self.user}:***@{parsed.hostname}"
-        if parsed.port:
-            netloc += f":{parsed.port}"
-        return urlunparse(
-            (parsed.scheme, netloc, f"/stream/channel/{uuid}", "", "", "")
-        )
 
 
 def _find_channel(channels: list[dict], query: str) -> dict | None:
