@@ -7,9 +7,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # Read-only: this job runs untrusted PR code, so it must never hold write
+    # or comment tokens. The coverage comment is posted by a separate
+    # workflow_run workflow (post-coverage.yml) that runs no PR code.
     permissions:
       contents: read
-      pull-requests: write   # post/update the coverage comment
 
     steps:
       - name: Check out repository
@@ -18,7 +20,17 @@ jobs:
       - name: Run unit tests
         uses: ./.github/actions/unit-tests
 
-      - name: Post coverage comment
+      # Lacking pull-requests: write, the action writes the rendered comment to
+      # python-coverage-comment-action.txt instead of posting it.
+      - name: Generate coverage comment
+        id: coverage_comment
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload coverage comment for the post-coverage workflow
+        if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage-comment-action
+          path: python-coverage-comment-action.txt

@@ -1,0 +1,32 @@
+name: Post coverage comment
+
+# Runs after the read-only "Tests" workflow finishes. This workflow checks out
+# NO pull-request code — it only downloads the coverage-comment artifact that
+# Tests produced and posts it — so it is safe to grant the write token that
+# Tests deliberately lacks. (workflow_run always runs the copy of this file from
+# the default branch, never a PR's version.)
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    # Only for successful PR runs; ignores non-PR triggers and failed test runs.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+
+    permissions:
+      pull-requests: write   # post/update the PR comment
+      actions: read          # download the artifact from the triggering run
+      contents: read
+
+    steps:
+      - name: Post coverage comment
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Pulls the python-coverage-comment-action artifact from that run.
+          GITHUB_PR_RUN_ID: ${{ github.event.workflow_run.id }}
