@@ -147,7 +147,7 @@ Pre-built images are published automatically, so you can run slopsoil **without 
 | Registry | Image |
 |---|---|
 | GitHub Container Registry | `ghcr.io/dev-topsoil/slopsoil` |
-| Docker Hub | `docker.io/<your-dockerhub-namespace>/slopsoil` |
+| Docker Hub | `docker.io/t0ps0il/slopsoil` |
 
 | Tag | Tracks |
 |---|---|
