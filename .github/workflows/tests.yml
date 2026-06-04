@@ -30,7 +30,7 @@ jobs:
 
       - name: Upload coverage comment for the post-coverage workflow
         if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-coverage-comment-action
           path: python-coverage-comment-action.txt
