@@ -28,7 +28,7 @@ filterwarnings = [
 source = ["."]
 omit = ["venv/*", "tests/*", "tools/*"]
 branch = true
-# Required by the PR coverage-comment action so paths resolve across machines.
+# Store relative paths in .coverage so the report renders consistently in CI.
 relative_files = true
 
 [tool.coverage.report]

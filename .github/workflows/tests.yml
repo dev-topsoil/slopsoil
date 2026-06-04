@@ -20,17 +20,16 @@ jobs:
       - name: Run unit tests
         uses: ./.github/actions/unit-tests
 
-      # Lacking pull-requests: write, the action writes the rendered comment to
-      # python-coverage-comment-action.txt instead of posting it.
-      - name: Generate coverage comment
-        id: coverage_comment
-        uses: py-cov-action/python-coverage-comment-action@v3
-        with:
-          GITHUB_TOKEN: ${{ github.token }}
+      # Bundle the rendered coverage report + the PR/commit it belongs to. The
+      # comment itself is posted by the privileged post-coverage workflow.
+      - name: Collect coverage artifact
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ci/test/collect-coverage.sh
 
-      - name: Upload coverage comment for the post-coverage workflow
-        if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
+      - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
         with:
-          name: python-coverage-comment-action
-          path: python-coverage-comment-action.txt
+          name: coverage-report
+          path: coverage-report/
