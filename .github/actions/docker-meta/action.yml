@@ -1,0 +1,71 @@
+name: Docker image metadata
+description: >-
+  Compute the image references (tags) and OCI labels to apply when building and
+  publishing the Docker image. Thin GitHub wrapper around the provider-agnostic
+  scripts in ci/docker so the publishing logic stays portable.
+
+inputs:
+  images:
+    description: Comma- or newline-separated image repositories (without tags).
+    required: true
+  default-branch:
+    description: Integration branch whose builds are published as "latest".
+    required: false
+    default: main
+  ref-type:
+    description: >-
+      Override the git ref type ("tag" or "branch"). Defaults to the triggering
+      ref. Needed for events (e.g. a merged pull_request) where the triggering
+      ref is not the branch/tag you actually want to publish.
+    required: false
+    default: ""
+  ref-name:
+    description: Override the git ref name. Defaults to the triggering ref.
+    required: false
+    default: ""
+  sha:
+    description: Override the commit SHA to tag. Defaults to the triggering commit.
+    required: false
+    default: ""
+  title:
+    description: OCI image title label.
+    required: false
+    default: ""
+  description:
+    description: OCI image description label.
+    required: false
+    default: ""
+  licenses:
+    description: SPDX license expression for the OCI licenses label.
+    required: false
+    default: ""
+
+outputs:
+  tags:
+    description: Newline-separated list of full image references to push.
+    value: ${{ steps.meta.outputs.tags }}
+  labels:
+    description: Newline-separated list of OCI "key=value" labels.
+    value: ${{ steps.meta.outputs.labels }}
+
+runs:
+  using: composite
+  steps:
+    - id: meta
+      shell: bash
+      env:
+        # Map GitHub context onto the generic variables the scripts expect.
+        # The optional overrides win when set, otherwise fall back to the
+        # triggering ref/commit.
+        IMAGES: ${{ inputs.images }}
+        REF_TYPE: ${{ inputs.ref-type != '' && inputs.ref-type || github.ref_type }}
+        REF_NAME: ${{ inputs.ref-name != '' && inputs.ref-name || github.ref_name }}
+        SHA: ${{ inputs.sha != '' && inputs.sha || github.sha }}
+        DEFAULT_BRANCH: ${{ inputs.default-branch }}
+        TITLE: ${{ inputs.title }}
+        DESCRIPTION: ${{ inputs.description }}
+        SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        REVISION: ${{ inputs.sha != '' && inputs.sha || github.sha }}
+        VERSION: ${{ inputs.ref-name != '' && inputs.ref-name || github.ref_name }}
+        LICENSES: ${{ inputs.licenses }}
+      run: "${GITHUB_ACTION_PATH}/run.sh"

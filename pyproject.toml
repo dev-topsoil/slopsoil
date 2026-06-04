@@ -28,6 +28,8 @@ filterwarnings = [
 source = ["."]
 omit = ["venv/*", "tests/*", "tools/*"]
 branch = true
+# Required by the PR coverage-comment action so paths resolve across machines.
+relative_files = true
 
 [tool.coverage.report]
 exclude_lines = [
