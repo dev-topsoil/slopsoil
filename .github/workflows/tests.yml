@@ -7,11 +7,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # Read-only: this job runs untrusted PR code, so it must never hold write
-    # or comment tokens. The coverage comment is posted by a separate
-    # workflow_run workflow (post-coverage.yml) that runs no PR code.
     permissions:
       contents: read
+      pull-requests: write   # post/update the coverage comment on the PR
 
     steps:
       - name: Check out repository
@@ -20,16 +18,8 @@ jobs:
       - name: Run unit tests
         uses: ./.github/actions/unit-tests
 
-      # Bundle the rendered coverage report + the PR/commit it belongs to. The
-      # comment itself is posted by the privileged post-coverage workflow.
-      - name: Collect coverage artifact
+      - name: Post coverage comment
         env:
+          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: ci/test/collect-coverage.sh
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-report
-          path: coverage-report/
+        run: ci/test/post-coverage-comment.sh
