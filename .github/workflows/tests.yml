@@ -7,16 +7,19 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      pull-requests: write   # post/update the coverage comment on the PR
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
+      - name: Run unit tests
+        uses: ./.github/actions/unit-tests
 
-      - name: Install dependencies
-        run: pip install "discord.py-self" PyNaCl python-dotenv pytest pytest-asyncio pytest-mock
-
-      - name: Run tests
-        run: pytest
+      - name: Post coverage comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: ci/test/post-coverage-comment.sh
