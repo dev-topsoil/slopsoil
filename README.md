@@ -26,7 +26,7 @@ Features include TVheadend integration, Jellyfin integration, M3U/IPTV playlist 
 - [Installation - Docker Compose](#installation--docker-compose)
 - [Configuration](#configuration)
 - [Commands](#commands)
-- [Rebuilding the Docker Container](#rebuilding-the-docker-container)
+- [Updating the Docker Container](#updating-the-docker-container)
 - [Hardware Acceleration](#hardware-acceleration)
 - [Running Tests](#running-tests)
 
@@ -78,6 +78,7 @@ For a detailed technical explanation of the streaming pipeline, the discord.py-s
 
 - Docker Engine 24+ and Docker Compose v2
 - Optional: a VA-API GPU (`/dev/dri`) or NVIDIA GPU for hardware encoding
+- No build required — pre-built images are published to GHCR and Docker Hub (see below)
 
 ---
 
@@ -86,7 +87,7 @@ For a detailed technical explanation of the streaming pipeline, the discord.py-s
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/topsoil/slopsoil.git
+git clone https://github.com/dev-topsoil/slopsoil.git
 cd slopsoil
 ```
 
@@ -139,14 +140,66 @@ python3 bot.py
 
 ## Installation - Docker Compose
 
-### 1. Clone the repository
+Pre-built images are published automatically, so you can run slopsoil **without cloning or building anything**. Building from source is still supported if you want to modify the code.
+
+### Published images
+
+| Registry | Image |
+|---|---|
+| GitHub Container Registry | `ghcr.io/dev-topsoil/slopsoil` |
+| Docker Hub | `docker.io/t0ps0il/slopsoil` |
+
+| Tag | Tracks |
+|---|---|
+| `latest` | The `develop` branch — newest features, updated on every merge |
+| `1.2.3`, `1.2`, `1` | Pinned stable releases — **use these for production** |
+
+> `latest` follows active development. For a stable deployment, pin a version tag (e.g. `:1.2.3`).
+
+### Option A - Pre-built image (recommended)
+
+#### 1. Create a `docker-compose.yml`
+
+```yaml
+services:
+  slopsoil:
+    image: ghcr.io/dev-topsoil/slopsoil:latest
+    restart: unless-stopped
+    env_file: .env
+
+    # Persist IPTV source list across container restarts.
+    volumes:
+      - slopsoil-data:/root/.local/share/slopsoil
+
+    # Uncomment for VA-API hardware encoding (see Hardware Acceleration):
+    # devices:
+    #   - /dev/dri:/dev/dri
+
+volumes:
+  slopsoil-data:
+```
+
+#### 2. Create your `.env`
+
+Create a `.env` file next to it with at least `DISCORD_TOKEN` and `ALLOWED_USER_IDS`. See [Configuration](#configuration) for every supported variable.
+
+#### 3. Pull and start
 
 ```bash
-git clone https://github.com/topsoil/slopsoil.git
+docker compose pull
+docker compose up -d
+```
+
+### Option B - Build from source
+
+#### 1. Clone the repository
+
+```bash
+git clone https://github.com/dev-topsoil/slopsoil.git
 cd slopsoil
 ```
 
-### 2. Configure the bot
+#### 2. Configure the bot
 
 ```bash
 cp .env.example .env
@@ -154,15 +207,17 @@ cp .env.example .env
 
 Edit `.env` with your Discord token and other settings. See [Configuration](#configuration).
 
-### 3. Build and start
+#### 3. Build and start
 
 ```bash
 docker compose up -d --build
 ```
 
-The container will build automatically on first run. IPTV source data is persisted in a named Docker volume (`slopsoil-data`) so your M3U sources survive container restarts and updates.
+The container will build automatically on first run.
 
-### 4. View logs
+### View logs
+
+IPTV source data is persisted in a named Docker volume (`slopsoil-data`) so your M3U sources survive container restarts and updates. Follow the logs with:
 
 ```bash
 docker compose logs -f
@@ -310,9 +365,22 @@ TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, 
 
 ---
 
-## Rebuilding the Docker Container
+## Updating the Docker Container
 
-When you pull new changes to the project, rebuild the container image:
+### Pre-built image (Option A)
+
+Pull the newest published image and recreate the container:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+If you pinned a version tag (e.g. `:1.2.3`), bump it in `docker-compose.yml` before pulling to move to a newer release.
+
+### Built from source (Option B)
+
+When you pull new changes to the project, rebuild the image:
 
 ```bash
 # Pull latest changes
@@ -364,10 +432,10 @@ devices:
   - /dev/dri:/dev/dri
 ```
 
-Then rebuild:
+Then recreate the container (add `--build` if you build from source):
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 ### Enabling NVIDIA NVENC in Docker

@@ -28,6 +28,8 @@ filterwarnings = [
 source = ["."]
 omit = ["venv/*", "tests/*", "tools/*"]
 branch = true
+# Store relative paths in .coverage so the report renders consistently in CI.
+relative_files = true
 
 [tool.coverage.report]
 exclude_lines = [
