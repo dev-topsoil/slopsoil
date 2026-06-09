@@ -564,8 +564,9 @@ def _detect_encoder() -> _EncoderConfig | None:
             )
         log.warning(
             "h264_vaapi is compiled in but the VA-API probe failed — falling back to "
-            "software. Likely a missing GPU driver (AMD needs mesa-va-drivers-freeworld) "
-            "or no /dev/dri access. Run `vainfo` in the container to diagnose; enable "
+            "software. Likely a missing GPU driver (AMD needs mesa-va-drivers-freeworld, "
+            "Intel needs intel-media-driver) or no /dev/dri access. Run `vainfo` in the "
+            "container to diagnose; enable "
             "DEBUG logging to see the FFmpeg error."
         )
 
