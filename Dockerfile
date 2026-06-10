@@ -1,4 +1,12 @@
-FROM fedora:44
+# fedora-minimal is the slimmed-down Fedora base: same packages and repos as
+# fedora:44 but without the full dnf/Python stack, so the image is noticeably
+# smaller.  It ships `microdnf` (a thin dnf5 frontend) instead of dnf — the only
+# practical difference here is the command name; it still installs from RPM
+# Fusion and supports --allowerasing.  We stay in the Fedora family on purpose:
+# it's the only mainstream distro whose stock FFmpeg (ffmpeg-free) bundles
+# libopenh264 + the hardware encoders WITHOUT libx264 (see below), which keeps
+# the encoder behaviour identical to the working host.
+FROM registry.fedoraproject.org/fedora-minimal:44
 
 # ffmpeg-free is Fedora's standard FFmpeg build (no libx264, but includes
 # libopenh264, h264_vaapi, h264_nvenc, and h264_qsv).  This matches the
@@ -23,19 +31,19 @@ FROM fedora:44
 # hardcode LIBVA_DRIVER_NAME, which would force one vendor and break the others.
 # We enable RPM Fusion ONLY for these drivers (and libva-utils, which provides
 # `vainfo` for debugging) — ffmpeg itself stays on ffmpeg-free.
-RUN dnf install -y \
+RUN microdnf install -y \
         ffmpeg-free \
         libva-utils \
         python3 \
         python3-pip \
         https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm \
         https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-44.noarch.rpm \
-    && dnf install -y --allowerasing \
+    && microdnf install -y --allowerasing \
         mesa-va-drivers-freeworld \
         intel-media-driver \
         libva-intel-driver \
-    && dnf clean all \
-    && rm -rf /var/cache/dnf
+    && microdnf clean all \
+    && rm -rf /var/cache/dnf /var/cache/libdnf5
 
 WORKDIR /app
 
