@@ -35,8 +35,8 @@ class General(commands.Cog):
             lines += [
                 "",
                 "**Streaming**",
-                "  `!channels` — list all channels (TVheadend + IPTV)"
-                " with now-playing info (paginated)",
+                "  `!channels [keyword]` — list all channels (TVheadend + IPTV)"
+                " with now-playing info; optionally filter by name",
                 "  `!play <number, name, or url>` — stream a TVheadend/IPTV"
                 " channel or a yt-dlp URL into voice",
                 "  `!search <show title>` — find a show in the EPG;"
