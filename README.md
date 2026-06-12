@@ -329,6 +329,7 @@ TVheadend is optional. If any of the three `TVHEADEND_*` variables are missing, 
 | `!play <channel name>` | Friend | Play a channel by name (case-insensitive substring match; searches TVheadend and IPTV) |
 | `!play <URL>` | Friend | Play any URL — YouTube VODs, YouTube Live streams, direct HLS/HTTP/RTSP streams, `.cgi` MJPEG feeds, etc. Live streams are detected automatically and streamed without downloading. |
 | `!channels` | Viewer | List all available channels with live now-playing info (paginated) |
+| `!channels <keyword>` | Viewer | Filter the channel list by name (case-insensitive substring match) |
 | `!search <show title>` | Friend | Search EPG for a show — plays immediately if airing now, or schedules for upcoming airtime. Showtimes are shown in the `TIMEZONE` configured in `.env`. |
 
 ### Jellyfin

@@ -13,6 +13,50 @@ from services.ytdlp import _DEFAULT_YT_FORMAT, _yt_format
 
 
 # ---------------------------------------------------------------------------
+# !channels name filter logic
+# ---------------------------------------------------------------------------
+
+IPTV_CHANNELS = [
+    {"name": "Zorbax One", "source": "src-a", "tvg_id": "zorb1"},
+    {"name": "Zorbax Two", "source": "src-a", "tvg_id": "zorb2"},
+    {"name": "Flumbo Network", "source": "src-b", "tvg_id": "flmb"},
+    {"name": "Quixel Sports 1", "source": "src-b", "tvg_id": "qxs1"},
+]
+
+
+def _apply_filter(channels: list[dict], query: str) -> list[dict]:
+    """Mirrors the inline filter in the channels command."""
+    return [ch for ch in channels if not query or query.lower() in ch["name"].lower()]
+
+
+def test_channels_filter_matches_multiple():
+    result = _apply_filter(IPTV_CHANNELS, "zorbax")
+    assert [ch["name"] for ch in result] == ["Zorbax One", "Zorbax Two"]
+
+
+def test_channels_filter_case_insensitive():
+    assert _apply_filter(IPTV_CHANNELS, "ZORBAX") == _apply_filter(IPTV_CHANNELS, "zorbax")
+
+
+def test_channels_filter_partial_match():
+    result = _apply_filter(IPTV_CHANNELS, "sports")
+    assert len(result) == 1
+    assert result[0]["name"] == "Quixel Sports 1"
+
+
+def test_channels_filter_empty_query_passes_all():
+    assert _apply_filter(IPTV_CHANNELS, "") == IPTV_CHANNELS
+
+
+def test_channels_filter_no_match_returns_empty():
+    assert _apply_filter(IPTV_CHANNELS, "gronkvision") == []
+
+
+def test_channels_filter_empty_channel_list():
+    assert _apply_filter([], "zorbax") == []
+
+
+# ---------------------------------------------------------------------------
 # _get_display_tz
 # ---------------------------------------------------------------------------
 
