@@ -26,7 +26,7 @@ IPTV_CHANNELS = [
 
 def _apply_filter(channels: list[dict], query: str) -> list[dict]:
     """Mirrors the inline filter in the channels command."""
-    return [ch for ch in channels if not query or query in ch["name"].lower()]
+    return [ch for ch in channels if not query or query.lower() in ch["name"].lower()]
 
 
 def test_channels_filter_matches_multiple():
