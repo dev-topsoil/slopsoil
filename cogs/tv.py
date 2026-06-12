@@ -189,9 +189,13 @@ class TV(commands.Cog):
 
     @require_role(Role.VIEWER)
     @commands.command()
-    async def channels(self, ctx: commands.Context):
-        """List all enabled channels (TVheadend + IPTV) with what's currently airing."""
+    async def channels(self, ctx: commands.Context, *, query: str = ""):
+        """List all enabled channels (TVheadend + IPTV) with what's currently airing.
+
+        Optional keyword filter: !channels <name>
+        """
         log.info("fetching channel list for %s in guild '%s'", ctx.author, ctx.guild)
+        query = query.strip().lower()
 
         sm = getattr(self.bot, "source_manager", None)
 
@@ -239,6 +243,8 @@ class TV(commands.Cog):
                 for c in chs:
                     num = c.get("number")
                     name = c.get("name", "(unnamed)")
+                    if query and query not in name.lower():
+                        continue
                     title = now_playing.get(c.get("uuid", ""), "")
                     if num is not None:
                         prefix = f"{num:>4}  "
@@ -277,6 +283,8 @@ class TV(commands.Cog):
 
             by_source: dict[str, list[dict]] = {}
             for ch in iptv_channels:
+                if query and query not in ch["name"].lower():
+                    continue
                 by_source.setdefault(ch["source"], []).append(ch)
             for source_name, source_chs in by_source.items():
                 lines.append(f"--- {source_name} ---")
@@ -291,7 +299,10 @@ class TV(commands.Cog):
                         lines.append(f"  {ch['name']}{suffix}")
 
         if not lines:
-            await ctx.send("no channels found")
+            if query:
+                await ctx.send(f"no channels found matching **{query}**")
+            else:
+                await ctx.send("no channels found")
             return
 
         # Split lines into 1800-char pages.
